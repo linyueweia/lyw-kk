@@ -39,6 +39,32 @@ K1 的网口 PHY 是 **Maxio MAE0621A**，**不在上游内核里**，必须打�
 - CI 的 `Verify image` 步骤会**在编出来的镜像里**断言 `CONFIG_MAXIO_PHY=y`
   以及两个 GMAC 的状态，避免"配置里有但镜像里没有"。
 
+## 树外驱动之二：SWT6621S SDIO WiFi + 蓝牙
+
+实机 SDIO 器件 `mmc3:0001:1` = vendor `0x1ffe` / device `0x6621`（**Seekwave SWT6621S**），
+实机加载的正是 `swt6621s_wifi` / `skw_sdio_lite` / `skwbt` 三个**树外**模块，
+内核里**没有任何** SWT/SKW 配置项 —— 与 Maxio PHY 同性质，必须自行接入。
+（armbian 框架默认开的 `AIC8800_WLAN_SUPPORT` 对这块板**无用**。）
+
+做法：
+- `patch/kernel/rk35xx-vendor-6.1/swt6621s-wifi-bt-driver.patch`
+  —— 驱动源码取自 `retro98boy/seekwave-swt6621s @ b1b1501`，装入
+  `drivers/net/wireless/seekwave/`，并挂好 `drivers/net/wireless/{Kconfig,Makefile}`；
+  已用 `patch -p1 --dry-run` + 实际应用双重复核（110 个文件，0 失败）。
+- `extensions/kickpi-k1-wifi.sh` —— 用 `custom_kernel_config` 钩子打开
+  `SEEKWAVE_BSP_DRIVERS` / `SKW_SDIOHAL` / `WLAN_VENDOR_SWT6621S` / `SKW_BT`，
+  并自检驱动确实已进入内核树。
+- `firmware/SWT6621S_*`（15 个文件）—— **取自实机 v1.2 原厂系统**，
+  经 `userpatches/overlay/lib/firmware/` 随镜像安装。
+
+## SATA / USB3 / 4G-5G 的落地方式（无需额外补丁）
+
+| 项目 | 依据 |
+|---|---|
+| **SATA** | 实机 `ata1` 控制器在线；框架内核已含 `SATA_AHCI_PLATFORM=y` + `AHCI_DWC=m`；DTS 里 3 个 sata 节点已转写。**仅作数据口**，不参与启动（系统从 SD/eMMC 起） |
+| **USB3** | `USB_DWC3=y` + `PHY_ROCKCHIP_INNO_USB3=y` + `NANENG_COMBO_PHY=y` 均在位；DTS 的 `&usbdrd30`/`&usbhost30` 含 dwc3 子节点（`phy-names = "usb2-phy\0usb3-phy"`） |
+| **4G/5G** | 框架内核已含 `USB_SERIAL_OPTION=m` `USB_SERIAL_QUALCOMM=m` `USB_NET_QMI_WWAN=m` `USB_NET_CDC_MBIM=m` `USB_ACM=y`；DTS 已含 4 个 USB2 口与 `vcc5v0_host`(PE6)/`vcc5v0_otg`(PE5) 供电（实机当前未插模块） |
+
 ## 仓库结构
 
 ```

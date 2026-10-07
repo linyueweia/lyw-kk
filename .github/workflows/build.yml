@@ -103,6 +103,16 @@ jobs:
                 build/patch/kernel/rk35xx-vendor-6.1/general-drv-net-phy-maxio-mae0621a.patch \
             || { echo "!! Maxio 补丁内容异常"; exit 1; }
 
+          # 自检：SWT6621S 驱动补丁必须包含三个模块的源码与 Kconfig 项
+          P=build/patch/kernel/rk35xx-vendor-6.1/swt6621s-wifi-bt-driver.patch
+          echo "--- swt6621s patch: $(du -h $P | cut -f1) ---"
+          for k in 'config SEEKWAVE_BSP_DRIVERS' 'config SKW_SDIOHAL' \
+                   'WLAN_VENDOR_SWT6621S' 'config SKW_BT' \
+                   'drivers/net/wireless/seekwave/drivers/swtbt4l/skw_btdriver.c'; do
+            grep -q "$k" "$P" || { echo "!! SWT6621S 补丁缺少: $k"; exit 1; }
+            echo "    OK  $k"
+          done
+
           # DDR 初始化固件：本机实测 K1 是 LPDDR4 @ 1560MHz
           # （设备树 lpddr4-params freq_0 = 0x618 = 1560；/sys/class/devfreq/dmc 上限 1560）
           # 框架对 rk3568 的默认值 rk35/rk3568_ddr_1560MHz_v1.21.bin 正好匹配，
@@ -117,10 +127,12 @@ jobs:
             exit 1
           fi
 
-      - name: Install KICKPI K1 extension (Maxio PHY config)
+      - name: Install KICKPI K1 extensions + WiFi firmware
         # 扩展放在 userpatches/extensions/ —— 框架会自动搜索该目录并加载。
         # 关键：框架只加载【可执行】的扩展脚本，权限不对会被静默跳过
         # （日志表现：Extension search result [ Found 0 extensions ]）
+        # 固件走框架正规通道 userpatches/overlay/（chroot 内即 /tmp/overlay），
+        # 由框架拷进镜像的 /lib/firmware/ —— 不在构建后往镜像里塞文件。
         run: |
           set -e
           mkdir -p build/userpatches/extensions
@@ -128,8 +140,16 @@ jobs:
           chmod +x build/userpatches/extensions/*.sh
           ls -l build/userpatches/extensions/
           echo "--- extension critical markers:"
-          grep -nE 'custom_kernel_config__|opts_y|MAXIO_PHY|exit_with_error' \
-                build/userpatches/extensions/kickpi-k1-maxio.sh
+          grep -nE 'custom_kernel_config__|opts_[ym]|MAXIO_PHY|SWT6621S' \
+                build/userpatches/extensions/*.sh
+
+          echo "--- SWT6621S 固件 -> overlay/lib/firmware/"
+          mkdir -p build/userpatches/overlay/lib/firmware
+          cp -v k1/firmware/SWT6621S_* build/userpatches/overlay/lib/firmware/
+          ls -l build/userpatches/overlay/lib/firmware/ | head -20
+          n=$(ls build/userpatches/overlay/lib/firmware/ | wc -l)
+          echo "固件数量: $n"
+          [ "$n" -ge 10 ] || { echo "!! 固件数量异常（实机有 15 个）"; exit 1; }
 
       - name: Set up QEMU (binfmt_misc for arm64 cross-build)
         uses: docker/setup-qemu-action@v3
@@ -152,7 +172,7 @@ jobs:
             BOARD=kickpi-k1 \
             BRANCH=vendor \
             RELEASE=trixie \
-            ENABLE_EXTENSIONS="kickpi-k1-maxio" \
+            ENABLE_EXTENSIONS="kickpi-k1-maxio,kickpi-k1-wifi" \
             BUILD_MINIMAL=no \
             BUILD_DESKTOP=no \
             KERNEL_CONFIGURE=no \
@@ -202,6 +222,38 @@ jobs:
             grep -q 'rockchip,rk3568-kickpi-k1\|kickpi,k1' /tmp/k1.dts || { echo "  !!  DTB 里没有 kickpi 标识"; FAIL=1; }
           else
             echo "  !!  镜像里找不到 rk3568-kickpi-k1.dtb"; FAIL=1
+          fi
+
+          # ── 检查 2b：SWT6621S WiFi/BT 驱动与固件（实机是树外驱动，本仓库自行编入）──
+          echo "--- WiFi 固件："
+          ls /mnt/ir/lib/firmware/SWT6621S_* 2>/dev/null | head -20
+          FW=$(ls /mnt/ir/lib/firmware/SWT6621S_* 2>/dev/null | wc -l)
+          if [ "$FW" -ge 10 ]; then echo "  OK  SWT6621S 固件 $FW 个"
+          else echo "  !!  SWT6621S 固件缺失（实机有 15 个）"; FAIL=1; fi
+
+          echo "--- SWT6621S 驱动模块："
+          for m in swt6621s_wifi skw_sdio_lite skwbt; do
+            f=$(find /mnt/ir/lib/modules -name "${m}.ko*" 2>/dev/null | head -1)
+            if [ -n "$f" ]; then echo "  OK  $m -> $f"
+            else echo "  (注) 未找到 $m.ko —— 若被编为内建(=y)则属正常，见内核配置检查"; fi
+          done
+          if [ -n "$CFG" ]; then
+            grep -E '^CONFIG_(SEEKWAVE_BSP_DRIVERS|SKW_SDIOHAL|WLAN_VENDOR_SWT6621S|SKW_BT)' "$CFG" || true
+            if grep -qE '^CONFIG_(SEEKWAVE_BSP_DRIVERS|WLAN_VENDOR_SWT6621S)=' "$CFG"; then
+              echo "  OK  SWT6621S 相关配置已生效"
+            else
+              echo "  !!  SWT6621S 相关配置未生效"; FAIL=1
+            fi
+            if grep -qE '^CONFIG_SATA_AHCI_PLATFORM=y|^CONFIG_AHCI_DWC=' "$CFG"; then
+              echo "  OK  SATA AHCI 配置在位"
+            else
+              echo "  !!  SATA AHCI 配置缺失（实机有 ata1 控制器）"; FAIL=1
+            fi
+            if grep -qE '^CONFIG_USB_SERIAL_OPTION=m|^CONFIG_USB_NET_QMI_WWAN=m' "$CFG"; then
+              echo "  OK  4G/5G(USB 串口/QMI) 配置在位"
+            else
+              echo "  !!  4G/5G 相关配置缺失"; FAIL=1
+            fi
           fi
 
           # ── 检查 3：armbianEnv 指向我们的 dtb ──
