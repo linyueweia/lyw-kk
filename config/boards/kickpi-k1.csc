@@ -26,3 +26,45 @@ function post_family_tweaks__kickpi_k1_hold_dtb() {
 	chroot_sdcard apt-mark hold linux-dtb-vendor-rk35xx || true
 	return 0
 }
+
+# iNextOS 的用户态网络初始化由 istorenext 扩展里的两个脚本负责：
+#   fix-ifaces-name          —— 按 /proc/device-tree/eth_order 或 /etc/eth_order 把网口重命名
+#   istorenext-init-network  —— 取 /root/.default-network（若存在）否则 eth* 里最后一个，
+#                               把它配成静态 192.168.100.1（网页后台入口）
+# 两者都没有时，命名只能靠内核探测顺序，LAN 口落到哪个物理口是不确定的。
+# 官方 easepi-r1 与本仓的 T68M 都是用「udev 规则 + /etc/eth_order + .default-network」
+# 三者并用把身份钉死，本板照做。
+#
+# KICKPI K1 只有【两个】板载千兆口（RK3568 双 gmac），没有 PCIe 网卡：
+#   实测厂商运行态：eth0 = fe010000.ethernet（该口插线，carrier=1，1000Mb/s）
+#                  eth1 = fe2a0000.ethernet（未插线）
+#   而实机 DT 的 aliases 写的是 ethernet0=/ethernet@fe2a0000 —— 与运行态不一致，
+#   正说明命名不可依赖，必须按平台地址钉死。
+# 因此把【实测在用】的 fe010000 定为 eth0（= LAN，192.168.100.1），
+# 另一个 fe2a0000 定为 eth1（可在网页后台里配成外网口）。
+# 若将来想对调两个物理口，只需交换下面两行的 NAME 值。
+function post_family_tweaks__kickpi_k1_network_interfaces() {
+	display_alert "$BOARD" "Pinning KICKPI K1 network interfaces to eth0/eth1" "info"
+
+	mkdir -p "${SDCARD}/etc/udev/rules.d/"
+	cat <<- EOF > "${SDCARD}/etc/udev/rules.d/70-persistent-net.rules"
+		SUBSYSTEM=="net", ACTION=="add", KERNELS=="fe010000.ethernet", NAME:="eth0"
+		SUBSYSTEM=="net", ACTION=="add", KERNELS=="fe2a0000.ethernet", NAME:="eth1"
+	EOF
+
+	# LAN 口：iStoreNext 的 istorenext-init-network 会读它并配成 192.168.100.1
+	echo "DEFAULT_INTERFACE=eth0" > "${SDCARD}/root/.default-network"
+	echo "fe010000.ethernet,fe2a0000.ethernet" > "${SDCARD}/etc/eth_order"
+
+	# 自证：三样东西必须真的落到镜像里
+	for f in etc/udev/rules.d/70-persistent-net.rules root/.default-network etc/eth_order; do
+		[[ -e "${SDCARD}/${f}" ]] || exit_with_error "network init file missing: ${f}"
+	done
+	grep -q 'KERNELS=="fe010000.ethernet", NAME:="eth0"' \
+		"${SDCARD}/etc/udev/rules.d/70-persistent-net.rules" \
+		|| exit_with_error "udev rule for eth0/fe010000 missing"
+	grep -q '^DEFAULT_INTERFACE=eth0$' "${SDCARD}/root/.default-network" \
+		|| exit_with_error ".default-network wrong"
+	display_alert "$BOARD" "K1 network pinned: eth0=fe010000(LAN 192.168.100.1), eth1=fe2a0000" "info"
+	return 0
+}
