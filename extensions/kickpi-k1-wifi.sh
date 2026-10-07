@@ -56,12 +56,23 @@ function custom_kernel_config__kickpi_k1_swt6621s() {
 	opts_y+=("SKW_NO_CONFIG")
 
 	if [[ -f .config ]]; then
-		grep -qE '^config (SEEKWAVE_BSP_DRIVERS|SKW_SDIOHAL)' \
-			"$DST/drivers/seekwaveplatform_lite/Kconfig" 2>/dev/null \
-			|| exit_with_error "SWT6621S 平台 Kconfig 内容异常"
-		grep -qE 'WLAN_VENDOR_SWT6621S' \
-			"$DST/drivers/swt6621s_wifi/Kconfig" 2>/dev/null \
+		# 自检各 Kconfig 项确实存在（注意符号的真实写法与所在文件，
+		# 三者都不在同一个 Kconfig 里——写错会把自己判死）
+		grep -qE '^(menu)?config SEEKWAVE_BSP_DRIVERS' \
+			"$DST/drivers/seekwaveplatform_lite/Kconfig" \
+			|| exit_with_error "SEEKWAVE_BSP_DRIVERS Kconfig 缺失"
+		grep -qE '^config SKW_SDIOHAL' \
+			"$DST/drivers/seekwaveplatform_lite/sdio/Kconfig" \
+			|| exit_with_error "SKW_SDIOHAL Kconfig 缺失"
+		grep -qE '^config WLAN_VENDOR_SWT6621S' \
+			"$DST/drivers/swt6621s_wifi/Kconfig" \
 			|| exit_with_error "WLAN_VENDOR_SWT6621S Kconfig 缺失"
+		grep -qE '^config SKW_BT' \
+			"$DST/drivers/swtbt4l/Kconfig" \
+			|| exit_with_error "SKW_BT Kconfig 缺失"
+		# 顶层 Kconfig 由补丁提供，扩展靠它挂进 wireless/Kconfig
+		[[ -f "$DST/Kconfig" ]] \
+			|| exit_with_error "$DST/Kconfig 缺失（补丁未提供顶层 Kconfig）"
 		display_alert "${EXTENSION}" "SWT6621S WiFi/BT 驱动将编入内核 (KICKPI K1 SDIO)" "info"
 	fi
 
