@@ -189,7 +189,7 @@ jobs:
             BOARD=kickpi-k1 \
             BRANCH=vendor \
             RELEASE=trixie \
-            ENABLE_EXTENSIONS="kickpi-k1-maxio,kickpi-k1-wifi" \
+            ENABLE_EXTENSIONS="istorenext,kickpi-k1-maxio,kickpi-k1-wifi,kickpi-k1-roceos" \
             BUILD_MINIMAL=no \
             BUILD_DESKTOP=no \
             KERNEL_CONFIGURE=no \
