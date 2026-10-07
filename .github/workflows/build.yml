@@ -203,8 +203,11 @@ jobs:
         run: |
           set -e
           IMG=$(ls build/output/images/*.img | head -n1)
-          chmod +x tools/verify-image.sh
-          bash tools/verify-image.sh "$IMG"
+          # 注意路径：板级仓库在 CI 里检出到 ./k1（其余步骤也一律用 k1/…），
+          # 写成 tools/… 会报 "cannot access 'tools/verify-image.sh'" 并在镜像
+          # 已经编好的情况下把整发判失败（实测踩到）。
+          chmod +x k1/tools/verify-image.sh
+          bash k1/tools/verify-image.sh "$IMG"
 
       - name: Verify image (Maxio PHY driver / dual GbE / DTB)
         run: |
