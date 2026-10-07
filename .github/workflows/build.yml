@@ -103,15 +103,19 @@ jobs:
                 build/patch/kernel/rk35xx-vendor-6.1/general-drv-net-phy-maxio-mae0621a.patch \
             || { echo "!! Maxio 补丁内容异常"; exit 1; }
 
-          # DDR 初始化固件：框架默认 rk3568_ddr_1560MHz_v1.21.bin。
-          # 该固件在 RK3568 板子上 DDR 训练失败时表现为上电后串口/HDMI 完全无输出
-          # （RK3568 板实测踩过），换用 armbian/rkbin 里更新的保守档 1056MHz v1.23。
+          # DDR 初始化固件：本机实测 K1 是 LPDDR4 @ 1560MHz
+          # （设备树 lpddr4-params freq_0 = 0x618 = 1560；/sys/class/devfreq/dmc 上限 1560）
+          # 框架对 rk3568 的默认值 rk35/rk3568_ddr_1560MHz_v1.21.bin 正好匹配，
+          # 且 BL31 用的 rk3568_bl31_v1.44.elf 与厂商引导器里的 bl31-v1.44 完全一致。
+          # 这里【不做替换】，只做正向自检：若上游改动默认值，立刻报警而不是静默编错固件。
           DDRINC=build/config/sources/families/include/rockchip64_common.inc
-          n_before=$(grep -c 'rk3568_ddr_1560MHz_v1.21.bin' "$DDRINC" || true)
-          sed -i 's#rk35/rk3568_ddr_1560MHz_v1.21.bin#rk35/rk3568_ddr_1056MHz_v1.23.bin#' "$DDRINC"
-          n_after=$(grep -c 'rk35/rk3568_ddr_1056MHz_v1.23.bin' "$DDRINC" || true)
-          echo "--- DDR 固件替换: 替换前 v1.21 命中=$n_before, 替换后 v1.23 命中=$n_after"
-          [ "$n_after" -ge 1 ] || { echo "!! DDR 固件替换失败"; exit 1; }
+          if grep -q 'rk35/rk3568_ddr_1560MHz_v1.21.bin' "$DDRINC"; then
+            echo "--- DDR 固件: 框架默认 1560MHz v1.21，与 K1 的 LPDDR4@1560 匹配 OK"
+          else
+            echo "!! 框架默认 rk3568 DDR 固件已变化，需重新评估是否匹配 K1 的 1560MHz LPDDR4"
+            grep -n 'rk3568_ddr' "$DDRINC" | sed 's/^/    /'
+            exit 1
+          fi
 
       - name: Install KICKPI K1 extension (Maxio PHY config)
         # 扩展放在 userpatches/extensions/ —— 框架会自动搜索该目录并加载。

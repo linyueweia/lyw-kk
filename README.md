@@ -49,6 +49,53 @@ extensions/kickpi-k1-maxio.sh                                     打开 CONFIG_
 .github/workflows/build.yml                                       CI（含构建期自证）
 ```
 
+
+## 本机实测的启动链 / 分区 / DDR（全部来自对这块板子的直接取证）
+
+### 厂商分区布局（GPT，Rockchip Android 式，非常规 Linux 布局）
+
+```
+mmcblk0 (58.2G) 分区名(PARTLABEL)：
+  p1   4M    uboot      前 16 字节 d00d feed...  ← Rockchip 引导器格式，U-Boot 在这
+  p2   4M    misc       全零
+  p3  64M    boot       d00d feed...            ← RK boot 镜像
+  p4 128M    recovery   d00d feed...
+  p5  32M    backup     全零
+  p6  58G    rootfs     ext4 ← 当前根
+  boot0/boot1：各 4M，全零（厂商引导器不在 eMMC boot 分区里）
+cmdline：storagemedia=emmc  root=PARTUUID=614e0000-0000   ← RK 专有约定
+```
+
+### 启动链（从 eMMC `uboot` 分区里读出的厂商 U-Boot 环境）
+
+```
+U-Boot 2017.09 (Dec 09 2025)   board=evb_rk3568   bl31-v1.44
+kickpi,cmd-uboot                     ← KICKPI 确实改过 U-Boot
+LBA64: "RKNS"                        ← BootROM 读取的 idblock
+boot_targets=mmc1 mmc0 mtd2 mtd1 mtd0 usb0 pxe dhcp
+rkimg_bootdev=if mmc dev 1 && rkimgtest mmc 1; then ... Boot from SDcard;
+              elif mmc dev 0; then ...          ← mmc1=SD 卡，优先于 mmc0=eMMC
+"Found IDB in SDcard" / "Rockchip SD Boot Image"
+```
+
+**链路**：BootROM → eMMC LBA64 的 idbloader(`RKNS`) → `uboot` 分区里的厂商 U-Boot
+→ 该 U-Boot 的 `rkimg_bootdev` **先探 SD 卡**（`mmc 1`）→ 所以**SD 卡启动这条路线是通的** ✓
+（这也是 T68M 当年 TF 卡能启动的同一机制）。
+
+### DDR
+
+- 类型/频率：**LPDDR4 @ 1560MHz**（`/proc/device-tree/lpddr4-params` 的 `freq_0 = 0x618 = 1560`）
+- → 框架对 rk3568 的默认 `rk35/rk3568_ddr_1560MHz_v1.21.bin` **正好匹配，不做任何替换**；
+  且框架的 `rk3568_bl31_v1.44.elf` 与厂商引导器里的 `bl31-v1.44` **完全一致**。
+- （T68M 当年需要换 1056MHz v1.23 是因为 T68M 的 DDR 训练过不了 1560，**那属于 T68M 的个体问题，
+  不能照搬到 K1** —— 本仓库已删除该替换。）
+
+### 没有 SPI NOR
+
+`/proc/mtd` 无设备、dmesg 无 spi-nor → **本板无 SPI 闪存**，
+故**不设** `BOOT_SUPPORT_SPI`（设了会让框架去生成 SPI loader，并因缺少
+`spl-blobs` 场景下不存在的 `tpl/u-boot-tpl.bin` 而构建失败 —— 已实际踩过）。
+
 ## 构建
 
 推送到 `main` 即触发；或在 Actions 页面手动 `workflow_dispatch`。

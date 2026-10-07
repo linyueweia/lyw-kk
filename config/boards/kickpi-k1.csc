@@ -13,7 +13,11 @@ FULL_DESKTOP="yes"
 BOOT_LOGO="desktop"
 BOOT_FDT_FILE="rockchip/rk3568-kickpi-k1.dtb"
 BOOT_SCENARIO="spl-blobs"
-BOOT_SUPPORT_SPI="yes"
+# 注意：本机实测【没有 SPI NOR 芯片】(/proc/mtd 无设备、dmesg 无 spi-nor)，
+# 因此绝不能开 BOOT_SUPPORT_SPI。实测教训：只写 BOOT_SUPPORT_SPI="yes" 而不配对
+# BOOT_SPI_RKSPI_LOADER，框架会去生成 rkspi_loader.img 并找 spl-blobs 场景下不存在的
+# tpl/u-boot-tpl.bin，导致构建在 uboot_custom_postprocess 阶段失败
+#   "mkimage: Can't open tpl/u-boot-tpl.bin" / "SPL image is too large (size 0xffffffff)"
 IMAGE_PARTITION_TABLE="gpt"
 BOOTFS_TYPE="fat"
 
