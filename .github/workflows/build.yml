@@ -207,7 +207,10 @@ jobs:
           # 写成 tools/… 会报 "cannot access 'tools/verify-image.sh'" 并在镜像
           # 已经编好的情况下把整发判失败（实测踩到）。
           chmod +x k1/tools/verify-image.sh
-          bash k1/tools/verify-image.sh "$IMG"
+          # 必须 root：脚本要 losetup + mount 镜像分区（缺 sudo 会报
+          #   mkdir: cannot create directory '/mnt/ib_v': Permission denied
+          #   losetup: ... failed to set up loop device）
+          sudo -E bash k1/tools/verify-image.sh "$IMG"
 
       - name: Verify image (Maxio PHY driver / dual GbE / DTB)
         run: |
