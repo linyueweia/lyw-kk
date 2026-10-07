@@ -182,6 +182,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Post-process verification (bootloader / DTB IP blocks / DDR fingerprint)
+        run: |
+          set -e
+          IMG=$(ls build/output/images/*.img | head -n1)
+          chmod +x tools/verify-image.sh
+          bash tools/verify-image.sh "$IMG"
+
       - name: Verify image (Maxio PHY driver / dual GbE / DTB)
         run: |
           set -e

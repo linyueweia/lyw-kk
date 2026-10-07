@@ -78,6 +78,19 @@ LABEL_BY_PATH = {
     '/phy@fe840000': 'combphy2_psq', '/phy@fe8c0000': 'pcie30phy',
     '/usb2-phy@fe8a0000': 'usb2phy0', '/usb2-phy@fe8b0000': 'usb2phy1',
     '/spdif@fe460000': 'spdif_8ch',
+    # ── 视频/图像/NPU 集群（此前整批遗漏，导致镜像里硬解/NPU/硬转码全废）──
+    # 标签名按 armbian/linux-rockchip rk-6.1-rkr5.1 的 rk356x.dtsi 实测：
+    # 注意实机节点名与主线不同（实机 video-codec@fdea0400 → 主线标签 vpu），靠地址配对
+    '/video-codec@fdea0400': 'vpu', '/vdpu@fdea0400': 'vpu',
+    '/rk_rga@fdeb0000': 'rk_rga', '/rkv_rga@fdeb0000': 'rk_rga',
+    '/jpegd@fded0000': 'jpegd', '/vepu@fdee0000': 'vepu',
+    '/iep@fdef0000': 'iep', '/rkvenc@fdf40000': 'rkvenc',
+    '/rkvdec@fdf80200': 'rkvdec', '/npu@fde40000': 'rknpu',
+    '/iommu@fde4b000': 'rknpu_mmu', '/iommu@fdea0800': 'vdpu_mmu',
+    '/iommu@fdf40f00': 'rkvenc_mmu', '/iommu@fdf80800': 'rkvdec_mmu',
+    '/iommu@fdee0800': 'vepu_mmu', '/iommu@fdef0800': 'iep_mmu',
+    '/iommu@fded0480': 'jpegd_mmu', '/iommu@fe043e00': 'vop_mmu',
+    '/rkvdec-sram@0': 'rkvdec_sram',
     '/nand-controller@fe330000': 'nandc', '/spi@fe610000': 'spi0',
     '/spi@fe620000': 'spi1', '/spi@fe630000': 'spi2', '/spi@fe640000': 'spi3',
     '/sfc@fe300000': 'sfc', '/pwm@fe6e0000': 'pwm4', '/pwm@fe6f0000': 'pwm5',
@@ -354,6 +367,24 @@ for p in soc_nodes:
             and not c.startswith('/pinctrl')]
     for c in kids:
         emit_node(c, '\t', 'full')
+    out.append('};')
+    out.append('')
+
+# 无 @ 地址的 SoC 节点：同样需要板级覆写（缺了 mpp-srv，/dev/mpp_service 不存在，
+# 硬件转码全线不可用；这才是 T68M 踩过的同一个坑）
+NOLABEL_SOC = {'/mpp-srv': 'mpp_srv', '/bus-npu': 'bus_npu'}
+for p, lbl in NOLABEL_SOC.items():
+    if p not in nodes:
+        continue
+    nd = nodes[p]
+    props = [(n, v) for n, v in nd['props']
+             if n not in SKIP_PROPS and n not in SOC_SKIP_PROPS
+             and (n in KEEP_EXACT or KEEP_RE or n == 'status')]
+    if not props:
+        continue
+    out.append('&%s {' % lbl)
+    for n, v in props:
+        out.append('\t%s = %s;' % (n, resolve(n, v)))
     out.append('};')
     out.append('')
 
