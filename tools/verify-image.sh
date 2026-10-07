@@ -84,7 +84,11 @@ if [[ -f "$DT" ]]; then
         apt-get install -y -qq device-tree-compiler >/dev/null 2>&1 || true
     fi
     dtfail=0
-    for p in /mpp-srv /rkvdec@fdf80200 /rkvenc@fdf40000 /vdpu@fdea0400 \
+    # 注意 /video-codec@fdea0400：vendor 6.1 树在同一地址上有两个节点 ——
+    #   vpu:  video-codec@fdea0400  ← 真 VPU（实机实为 okay，本表要查的就是它）
+    #   vdpu: vdpu@fdea0400         ← 同地址的占位节点(reg 仅 0x400)，常年 disabled
+    # 曾经误查后者，导致明明 DTS 生效却报"有 IP 块未使能"。
+    for p in /mpp-srv /rkvdec@fdf80200 /rkvenc@fdf40000 /video-codec@fdea0400 \
              /vepu@fdee0000 /rk_rga@fdeb0000 /iep@fdef0000 /jpegd@fded0000 \
              /rng@fe388000 /npu@fde40000 /iommu@fdf80800 /iommu@fdf40f00; do
         st=$(fdtget -t s "$DT" "$p" status 2>/dev/null || echo MISSING)
@@ -99,8 +103,25 @@ if [[ -f "$DT" ]]; then
         for pat in "tx_delay = <0x21>" "rx_delay = <0x3c>" "tx_delay = <0x2f>" "rx_delay = <0x39>"; do
             grep -q "$pat" "$DTC" && ok "实机值 $pat" || bad "缺实机值 $pat"
         done
-        grep -qiE 'maxio|mae0621' "$DTC" && ok "网口 PHY 为 Maxio 系" || bad "未见 Maxio PHY"
-        grep -q "maxio" "$DTC" 2>/dev/null
+        # PHY 说明：本板 PHY 是 Maxio MAE0621A，但 DT 里【不会】出现 "maxio" 字样 ——
+        # 实测实机 DT 两处 PHY 均为 compatible = "ethernet-phy-ieee802.3-c22"（通用 C22），
+        # Maxio 驱动是按运行时读到的 PHY ID 匹配的。所以这里该查两件事：
+        #   (a) 两个 PHY 节点确实存在（C22）
+        #   (b) 镜像内核【配置】里 CONFIG_MAXIO_PHY=y（这才是双千兆的命门）
+        nphy=$(grep -c 'ethernet-phy-ieee802.3-c22' "$DTC" 2>/dev/null || echo 0)
+        [[ "${nphy:-0}" -ge 2 ]] && ok "DT 里 PHY 节点 $nphy 个（通用 C22，实机即如此）" \
+                                 || bad "DT 里 PHY 节点不足（找到 ${nphy:-0} 个，本板应为 2）"
+        KCFG="$(ls "$MNT"/config-* 2>/dev/null | head -1 || true)"
+        if [[ -n "$KCFG" ]]; then
+            if grep -qE '^CONFIG_MAXIO_PHY=y' "$KCFG"; then
+                ok "内核配置 CONFIG_MAXIO_PHY=y（双千兆命门）"
+            else
+                bad "内核配置未开 CONFIG_MAXIO_PHY —— 两个网口将无法工作"
+            fi
+            grep -E '^CONFIG_(MAXIO_PHY|MOTORCOMM_PHY|SEEKWAVE|SWT6621)' "$KCFG" | sed 's/^/       /' || true
+        else
+            echo "    · boot 分区未见 config-*（跳过内核配置检查）"
+        fi
     else
         bad "dtc 不可用或无法反解 DTB"
     fi
