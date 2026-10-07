@@ -18,6 +18,16 @@
 #
 # 固件：firmware/SWT6621S_*（15 个文件，取自实机 v1.2 原厂系统，经 overlay 随镜像安装）
 function custom_kernel_config__kickpi_k1_swt6621s() {
+	# 这个钩子会被调用【两次】，必须区分：
+	#   1) artifact_kernel_prepare_version() 阶段：内核源码还没拉取，cwd=/armbian，
+	#      框架只是借这个钩子算 artifact 版本号。此时做任何文件操作都是错的
+	#      （实测：曾在此处误判"驱动未生效"而整体失败）。
+	#   2) kernel_config_initialize() 阶段：已 cd 进内核源码树、补丁已应用 —— 真正该干活的时候。
+	# 判据用"内核源码树是否就位"，不依赖调用顺序。
+	if [[ ! -f drivers/net/wireless/Kconfig ]]; then
+		return 0
+	fi
+
 	kernel_config_modifying_hashes+=("kickpi-k1-swt6621s")
 
 	local WK="drivers/net/wireless/Kconfig"
