@@ -1354,30 +1354,54 @@
 
 &usbdrd30 {
 	status = "okay";
+	dwc3@fcc00000 {
+		compatible = "snps,dwc3";
+		reg = <0x00 0xfcc00000 0x00 0x400000>;
+		interrupts = <0x00 0xa9 0x04>;
+		dr_mode = "otg";
+		phys = <&{/usb2-phy@fe8a0000/otg-port}>;
+		phy-names = "usb2-phy";
+		phy_type = "utmi_wide";
+		power-domains = <0x26 0x0f>;
+		resets = <0x24 0x94>;
+		reset-names = "usb3-otg";
+		status = "okay";
+		extcon = <0x2a>;
+		maximum-speed = "high-speed";
+	};
 };
 
 &usbhost30 {
 	status = "okay";
+	dwc3@fd000000 {
+		compatible = "snps,dwc3";
+		reg = <0x00 0xfd000000 0x00 0x400000>;
+		interrupts = <0x00 0xaa 0x04>;
+		dr_mode = "host";
+		phys = <0x2b 0x27 0x04>;
+		phy-names = "usb2-phy\0usb3-phy";
+		phy_type = "utmi_wide";
+		power-domains = <0x26 0x0f>;
+		resets = <0x24 0x95>;
+		reset-names = "usb3-host";
+		status = "okay";
+	};
 };
 
-&usb {
+&usb_host0_ehci {
 	status = "okay";
 };
 
-&usb {
+&usb_host0_ohci {
 	status = "okay";
 };
 
-&usb {
+&usb_host1_ehci {
 	status = "okay";
 };
 
-&usb {
+&usb_host1_ohci {
 	status = "okay";
-};
-
-&syscon {
-	status = "disabled";
 };
 
 &cru {
@@ -1435,156 +1459,34 @@
 	};
 };
 
-&serial {
+&uart0 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&{/pinctrl/uart0/uart0-xfer}>;
 	status = "okay";
 };
 
-&pwm {
+&pwm0 {
 	pinctrl-names = "active";
 	pinctrl-0 = <&{/pinctrl/pwm0/pwm0m0-pins}>;
 	status = "disabled";
 };
 
-&pwm {
+&pwm1 {
 	pinctrl-names = "active";
 	pinctrl-0 = <&{/pinctrl/pwm1/pwm1m0-pins}>;
 	status = "disabled";
 };
 
-&pwm {
+&pwm2 {
 	pinctrl-names = "active";
 	pinctrl-0 = <&{/pinctrl/pwm2/pwm2m0-pins}>;
 	status = "disabled";
 };
 
-&pwm {
+&pwm3 {
 	pinctrl-names = "active";
 	pinctrl-0 = <&{/pinctrl/pwm3/pwm3-pins}>;
 	status = "okay";
-};
-
-&npu {
-	assigned-clocks = <0x24 0x23>;
-	assigned-clock-rates = <0x23c34600>;
-	status = "okay";
-	rknpu-supply = <&{/i2c@fdd40000/pmic@20/regulators/DCDC_REG4}>;
-};
-
-&iommu {
-	status = "okay";
-};
-
-&gpu {
-	status = "okay";
-	mali-supply = <&{/i2c@fdd40000/pmic@20/regulators/DCDC_REG2}>;
-	power-model {
-		compatible = "simple-power-model";
-		leakage-range = <0x05 0x0f>;
-		ls = <0xffffa23e 0x5927 0x00>;
-		static-coefficient = <0x186a0>;
-		dynamic-coefficient = <0x3b9>;
-		ts = <0xfffe56a6 0xf87a 0xfffffab5 0x14>;
-		thermal-zone = "gpu-thermal";
-	};
-};
-
-&vdpu {
-	status = "okay";
-};
-
-&iommu {
-	status = "okay";
-};
-
-&rk_rga {
-	status = "okay";
-};
-
-&ebc {
-	rockchip,grf = <&{/syscon@fdc60000}>;
-	pinctrl-names = "default";
-	pinctrl-0 = <&{/pinctrl/ebc/ebc-pins}>;
-	status = "disabled";
-};
-
-&jpegd {
-	status = "okay";
-};
-
-&iommu {
-	status = "okay";
-};
-
-&vepu {
-	status = "okay";
-};
-
-&iommu {
-	status = "okay";
-};
-
-&iep {
-	status = "okay";
-};
-
-&iommu {
-	status = "okay";
-};
-
-&eink {
-	status = "disabled";
-};
-
-&rkvenc {
-	assigned-clocks = <0x24 0x103 0x24 0x105>;
-	assigned-clock-rates = <0x11b3dc40 0x11b3dc40>;
-	status = "okay";
-	venc-supply = <&{/i2c@fdd40000/pmic@20/regulators/DCDC_REG1}>;
-};
-
-&iommu {
-	status = "okay";
-};
-
-&rkvdec {
-	assigned-clocks = <0x24 0x108 0x24 0x10a 0x24 0x10b 0x24 0x10c>;
-	assigned-clock-rates = <0x11b3dc40 0x11b3dc40 0x11b3dc40 0x11b3dc40>;
-	vdec-supply = <&{/i2c@fdd40000/pmic@20/regulators/DCDC_REG1}>;
-	status = "okay";
-};
-
-&iommu {
-	status = "okay";
-};
-
-&mipi_csi2_hw {
-	status = "okay";
-};
-
-&rkcif {
-	assigned-clocks = <0x24 0xd0>;
-	assigned-clock-rates = <0x11e1a300>;
-	rockchip,grf = <&{/syscon@fdc60000}>;
-	status = "disabled";
-};
-
-&iommu {
-	status = "disabled";
-};
-
-&rkisp {
-	rockchip,grf = <&{/syscon@fdc60000}>;
-	status = "okay";
-};
-
-&iommu {
-	status = "okay";
-};
-
-&uio {
-	status = "disabled";
 };
 
 &gmac1 {
@@ -1616,29 +1518,11 @@
 	assigned-clock-parents = <0x39 0x02 0x24 0x05 0x24 0x04>;
 };
 
-&iommu {
-	status = "okay";
-};
-
-&dsi {
-	rockchip,grf = <&{/syscon@fdc60000}>;
-	status = "disabled";
-};
-
-&dsi {
-	rockchip,grf = <&{/syscon@fdc60000}>;
-	status = "disabled";
-};
-
 &hdmi {
 	rockchip,grf = <&{/syscon@fdc60000}>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&hdmitx_scl &hdmitx_sda &hdmitxm0_cec>;
 	status = "okay";
-};
-
-&edp {
-	status = "disabled";
 };
 
 &sdmmc2 {
@@ -1648,10 +1532,6 @@
 	mmc-pwrseq = <&{/sdio-pwrseq}>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdmmc2m0_bus4 &sdmmc2m0_cmd &sdmmc2m0_clk>;
-};
-
-&dfi {
-	status = "okay";
 };
 
 &pcie2x1 {
@@ -1672,10 +1552,6 @@
 	status = "okay";
 	reset-gpios = <0xbb 0x1e 0x00>;
 	vpcie3v3-supply = <&{/gpio-regulator}>;
-};
-
-&uio {
-	status = "disabled";
 };
 
 &gmac0 {
@@ -1715,22 +1591,12 @@
 	status = "disabled";
 };
 
-&spi {
-	assigned-clocks = <0x24 0x78>;
-	assigned-clock-rates = <0x5f5e100>;
-	status = "disabled";
-};
-
 &sdhci {
 	assigned-clocks = <0x24 0x7b 0x24 0x7d 0x24 0x7c>;
 	assigned-clock-rates = <0xbebc200 0x16e3600 0xbebc200>;
 	status = "okay";
 	bus-width = <0x08>;
 	max-frequency = <0xbebc200>;
-};
-
-&nandc {
-	status = "okay";
 };
 
 &crypto {
@@ -1743,26 +1609,21 @@
 	status = "okay";
 };
 
-&i2s {
-	rockchip,grf = <&{/syscon@fdc60000}>;
-	status = "okay";
-};
-
-&i2s {
+&i2s0_8ch {
 	rockchip,grf = <&{/syscon@fdc60000}>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2s1m0_sclktx &i2s1m0_lrcktx &i2s1m0_sdi0 &i2s1m0_sdo0>;
 	status = "okay";
 };
 
-&i2s {
+&i2s1_8ch {
 	rockchip,grf = <&{/syscon@fdc60000}>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2s2m0_sclktx &i2s2m0_lrcktx &i2s2m0_sdi &i2s2m0_sdo>;
 	status = "disabled";
 };
 
-&i2s {
+&i2s2_2ch {
 	rockchip,grf = <&{/syscon@fdc60000}>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2s3m0_sclk &i2s3m0_lrck &i2s3m0_sdi &i2s3m0_sdo>;
@@ -1785,24 +1646,7 @@
 	status = "disabled";
 };
 
-&audpwm {
-	status = "disabled";
-};
-
-&codec_digital {
-	pinctrl-names = "default";
-	pinctrl-0 = <&{/pinctrl/acodec/acodec-pins}>;
-	rockchip,grf = <&{/syscon@fdc60000}>;
-	status = "disabled";
-};
-
-&rkscr {
-	pinctrl-names = "default";
-	pinctrl-0 = <&{/pinctrl/scr/scr-pins}>;
-	status = "disabled";
-};
-
-&can {
+&can0 {
 	status = "disabled";
 	assigned-clocks = <0x24 0x141>;
 	assigned-clock-rates = <0x8f0d180>;
@@ -1810,7 +1654,7 @@
 	pinctrl-0 = <&{/pinctrl/can0/can0m1-pins}>;
 };
 
-&can {
+&can1 {
 	status = "disabled";
 	assigned-clocks = <0x24 0x143>;
 	assigned-clock-rates = <0x8f0d180>;
@@ -1818,7 +1662,7 @@
 	pinctrl-0 = <&{/pinctrl/can1/can1m1-pins}>;
 };
 
-&can {
+&can2 {
 	status = "disabled";
 	assigned-clocks = <0x24 0x145>;
 	assigned-clock-rates = <0x8f0d180>;
@@ -1880,39 +1724,39 @@
 	};
 };
 
-&watchdog {
+&wdt {
 	status = "okay";
 };
 
-&spi {
+&spi0 {
 	pinctrl-names = "default\0high_speed";
 	pinctrl-0 = <&spi0m0_cs0 &spi0m0_cs1 &spi0m0_pins>;
 	pinctrl-1 = <&spi0m0_cs0 &spi0m0_cs1 &spi0m0_pins>;
 	status = "disabled";
 };
 
-&spi {
+&spi1 {
 	pinctrl-names = "default\0high_speed";
 	pinctrl-0 = <&spi1m0_cs0 &spi1m0_cs1 &spi1m0_pins>;
 	pinctrl-1 = <&spi1m0_cs0 &spi1m0_cs1 &spi1m0_pins>;
 	status = "disabled";
 };
 
-&spi {
+&spi2 {
 	pinctrl-names = "default\0high_speed";
 	pinctrl-0 = <&spi2m0_cs0 &spi2m0_cs1 &spi2m0_pins>;
 	pinctrl-1 = <&spi2m0_cs0 &spi2m0_cs1 &spi2m0_pins>;
 	status = "disabled";
 };
 
-&spi {
+&spi3 {
 	pinctrl-names = "default\0high_speed";
 	pinctrl-0 = <&{/pinctrl/spi3/spi3m1-pins}>;
 	pinctrl-1 = <&{/pinctrl/spi3-hs/spi3m1-pins}>;
 	status = "okay";
 };
 
-&serial {
+&uart1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&{/pinctrl/uart1/uart1m0-xfer}>;
 	status = "disabled";
@@ -1924,137 +1768,63 @@
 	status = "disabled";
 };
 
-&serial {
+&uart3 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&{/pinctrl/uart3/uart3m1-xfer}>;
 	status = "okay";
 };
 
-&serial {
+&uart4 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&{/pinctrl/uart4/uart4m1-xfer}>;
 	status = "okay";
 };
 
-&serial {
+&uart5 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&{/pinctrl/uart5/uart5m0-xfer}>;
 	status = "disabled";
 };
 
-&serial {
+&uart6 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&{/pinctrl/uart6/uart6m0-xfer}>;
 	status = "disabled";
 };
 
-&serial {
+&uart7 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&{/pinctrl/uart7/uart7m1-xfer}>;
 	status = "okay";
 };
 
-&serial {
+&uart8 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart8m0_xfer &uart8m0_ctsn>;
 	status = "okay";
 };
 
-&serial {
+&uart9 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&{/pinctrl/uart9/uart9m0-xfer}>;
 	status = "disabled";
 };
 
-&pwm {
+&pwm4 {
 	pinctrl-names = "active";
 	pinctrl-0 = <&{/pinctrl/pwm4/pwm4-pins}>;
 	status = "disabled";
 };
 
-&pwm {
-	pinctrl-names = "active";
-	pinctrl-0 = <&{/pinctrl/pwm5/pwm5-pins}>;
-	status = "disabled";
-};
-
-&pwm {
-	pinctrl-names = "active";
-	pinctrl-0 = <&{/pinctrl/pwm6/pwm6-pins}>;
-	status = "disabled";
-};
-
-&pwm {
-	pinctrl-names = "default";
-	pinctrl-0 = <&{/pinctrl/pwm7/pwm7-pins}>;
-	status = "okay";
-};
-
-&pwm {
+&pwm5 {
 	pinctrl-names = "active";
 	pinctrl-0 = <&{/pinctrl/pwm8/pwm8m0-pins}>;
 	status = "disabled";
 };
 
-&pwm {
-	pinctrl-names = "active";
-	pinctrl-0 = <&{/pinctrl/pwm9/pwm9m0-pins}>;
-	status = "disabled";
-};
-
-&pwm {
-	pinctrl-names = "active";
-	pinctrl-0 = <&{/pinctrl/pwm10/pwm10m0-pins}>;
-	status = "disabled";
-};
-
-&pwm {
-	pinctrl-names = "active";
-	pinctrl-0 = <&{/pinctrl/pwm11/pwm11m0-pins}>;
-	status = "disabled";
-};
-
-&pwm {
-	pinctrl-names = "active";
-	pinctrl-0 = <&{/pinctrl/pwm12/pwm12m0-pins}>;
-	status = "disabled";
-};
-
-&pwm {
-	pinctrl-names = "active";
-	pinctrl-0 = <&{/pinctrl/pwm13/pwm13m0-pins}>;
-	status = "disabled";
-};
-
-&pwm {
-	pinctrl-names = "active";
-	pinctrl-0 = <&{/pinctrl/pwm14/pwm14m0-pins}>;
-	status = "disabled";
-};
-
-&pwm {
-	pinctrl-names = "active";
-	pinctrl-0 = <&{/pinctrl/pwm15/pwm15m0-pins}>;
-	status = "disabled";
-};
-
-&tsadc {
-	rockchip,grf = <&{/syscon@fdc60000}>;
-	assigned-clocks = <0x24 0x110 0x24 0x111>;
-	assigned-clock-rates = <0x1036640 0xaae60>;
-	pinctrl-names = "gpio\0otpout";
-	pinctrl-0 = <&{/pinctrl/gpio-func/tsadc-gpio-func}>;
-	pinctrl-1 = <&{/pinctrl/tsadc/tsadc-shutorg}>;
-	status = "okay";
-};
-
 &saradc {
 	status = "okay";
 	vref-supply = <&{/i2c@fdd40000/pmic@20/regulators/LDO_REG7}>;
-};
-
-&mailbox {
-	status = "disabled";
 };
 
 &combphy0_us {
@@ -2072,19 +1842,6 @@
 &combphy2_psq {
 	assigned-clocks = <0x39 0x25>;
 	assigned-clock-rates = <0x5f5e100>;
-	status = "okay";
-};
-
-&phy {
-	status = "disabled";
-};
-
-&phy {
-	status = "disabled";
-};
-
-&csi2_dphy_hw {
-	rockchip,grf = <&{/syscon@fdc60000}>;
 	status = "okay";
 };
 

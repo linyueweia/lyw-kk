@@ -1,18 +1,3 @@
---- a/drivers/net/wireless/Kconfig
-+++ b/drivers/net/wireless/Kconfig
-@@ -116,3 +116,5 @@
- 	  are wifi connections through a special rtnetlink device.
- 
- endif # WLAN
-+
-+source "drivers/net/wireless/seekwave/Kconfig"
---- a/drivers/net/wireless/Makefile
-+++ b/drivers/net/wireless/Makefile
-@@ -34,3 +34,4 @@
- 
- obj-$(CONFIG_VIRT_WIFI)	+= virt_wifi.o
- obj-$(CONFIG_WL_ROCKCHIP)	+= rockchip_wlan/
-+obj-$(CONFIG_SEEKWAVE_BSP_DRIVERS) += seekwave/
 --- a/drivers/net/wireless/seekwave/Kconfig
 +++ b/drivers/net/wireless/seekwave/Kconfig
 @@ -0,0 +1,5 @@
@@ -61357,13 +61342,13 @@
 +#endif
 --- a/drivers/net/wireless/seekwave/drivers/swtbt4l/sv6160.nvbin
 +++ b/drivers/net/wireless/seekwave/drivers/swtbt4l/sv6160.nvbin
-Binary files /dev/null and /work/kk/wifi-stage/drivers/net/wireless/seekwave/drivers/swtbt4l/sv6160.nvbin differ
+Binary files /dev/null and /work/kk/wifi-stage2/drivers/net/wireless/seekwave/drivers/swtbt4l/sv6160.nvbin differ
 --- a/drivers/net/wireless/seekwave/drivers/swtbt4l/sv6160lite.nvbin
 +++ b/drivers/net/wireless/seekwave/drivers/swtbt4l/sv6160lite.nvbin
-Binary files /dev/null and /work/kk/wifi-stage/drivers/net/wireless/seekwave/drivers/swtbt4l/sv6160lite.nvbin differ
+Binary files /dev/null and /work/kk/wifi-stage2/drivers/net/wireless/seekwave/drivers/swtbt4l/sv6160lite.nvbin differ
 --- a/drivers/net/wireless/seekwave/drivers/swtbt4l/sv6316.nvbin
 +++ b/drivers/net/wireless/seekwave/drivers/swtbt4l/sv6316.nvbin
-Binary files /dev/null and /work/kk/wifi-stage/drivers/net/wireless/seekwave/drivers/swtbt4l/sv6316.nvbin differ
+Binary files /dev/null and /work/kk/wifi-stage2/drivers/net/wireless/seekwave/drivers/swtbt4l/sv6316.nvbin differ
 --- a/drivers/net/wireless/seekwave/include/linux/platform_data/skw_platform_data.h
 +++ b/drivers/net/wireless/seekwave/include/linux/platform_data/skw_platform_data.h
 @@ -0,0 +1,228 @@
