@@ -211,6 +211,12 @@ jobs:
           fi
 
           # ── 检查 2：板级 DTB 必须存在、且两个 GMAC 都是 okay ──
+          # 需要 dtc 反解 DTB；runner 默认没装（上一轮就因此失败：sudo: dtc: command not found）
+          if ! command -v dtc >/dev/null 2>&1; then
+            sudo apt-get update -qq >/dev/null 2>&1 || true
+            sudo apt-get install -y -qq device-tree-compiler >/dev/null 2>&1 || true
+          fi
+          command -v dtc >/dev/null 2>&1 && echo "  dtc: $(dtc --version 2>&1 | head -1)" || echo "  ✗ dtc 仍不可用"
           DTB=$(ls /mnt/ib/dtb/rockchip/rk3568-kickpi-k1.dtb 2>/dev/null | head -1 || true)
           if [ -n "$DTB" ]; then
             echo "--- dtb: $DTB"
