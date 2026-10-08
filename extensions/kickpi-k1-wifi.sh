@@ -17,6 +17,29 @@
 #     所以挂钩在这里用"追加 + 幂等守卫"完成。
 #
 # 固件：firmware/SWT6621S_*（15 个文件，取自实机 v1.2 原厂系统，经 overlay 随镜像安装）
+# ── SWT6621S 固件落进镜像 ─────────────────────────────────────────
+# 实测：只把固件放进 userpatches/overlay/ 时，成品镜像的 /lib/firmware 里
+# 一个 SWT6621S 文件都没有（自证步骤报 "SWT6621S 固件缺失（实机有 15 个）"）。
+# 所以像 roceos 载荷那样，在构建阶段由扩展自己拷进镜像根，不赌 overlay 时序。
+function post_family_tweaks__kickpi_k1_wifi_firmware() {
+    local dst="${SDCARD}/lib/firmware"
+    local n=0
+    mkdir -p "$dst"
+    for src in /tmp/overlay/lib/firmware/SWT6621S_* "${SRC}"/userpatches/overlay/lib/firmware/SWT6621S_*; do
+        for f in $src; do
+            [[ -f "$f" ]] || continue
+            cp -f "$f" "$dst/" && n=$((n+1))
+        done
+    done
+    if [[ $n -lt 10 ]]; then
+        display_alert "$BOARD" "SWT6621S 固件只落了 $n 个（应 ≥15）" "warn"
+    else
+        display_alert "$BOARD" "SWT6621S 固件已落镜像 $n 个" "info"
+    fi
+    return 0
+}
+
+
 function custom_kernel_config__kickpi_k1_swt6621s() {
 	# 这个钩子会被调用【两次】，必须区分：
 	#   1) artifact_kernel_prepare_version() 阶段：内核源码还没拉取，cwd=/armbian，

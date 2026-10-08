@@ -7,7 +7,11 @@ BOARD_NAME="KICKPI K1"
 BOARD_VENDOR="kickpi"
 BOARDFAMILY="rk35xx"
 BOARD_MAINTAINER="linyueweia"
-BOOTCONFIG="rock-3a-rk3568_defconfig"
+# rock-3a 的 SD 槽挂在 sdhci@fe310000，而本板 K1 的 SD 槽是标准 dwmmc(SDMMC0)。
+# 实测教训（飞牛卡）：用 rock-3a 编出的 u-boot 从 SD 启动会死在 SPL —— 电源灯亮、
+# 系统灯不亮、完全起不来。与同为 rk3568 双千兆 NAS 板的官方 easepi-r1 及本仓 T68M
+# 保持一致，改用 radxa-e25-rk3568_defconfig。
+BOOTCONFIG="radxa-e25-rk3568_defconfig"
 KERNEL_TARGET="vendor"
 FULL_DESKTOP="yes"
 BOOT_LOGO="desktop"
