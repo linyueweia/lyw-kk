@@ -144,6 +144,8 @@ jobs:
                 build/userpatches/extensions/*.sh
           grep -q 'kickpi_k1_roceos' build/userpatches/extensions/kickpi-k1-roceos.sh \
             || { echo "!! roceos 扩展缺失"; exit 1; }
+          grep -q 'kickpi_k1_storage_irq' build/userpatches/extensions/kickpi-k1-kernel-config.sh \
+            || { echo "!! kernel-config 扩展缺失（AHCI_DWC/PCI_MSI 兜底）"; exit 1; }
 
           echo "--- SWT6621S 固件 -> overlay/lib/firmware/"
           mkdir -p build/userpatches/overlay/lib/firmware
@@ -151,7 +153,7 @@ jobs:
           ls -l build/userpatches/overlay/lib/firmware/ | head -20
           n=$(ls build/userpatches/overlay/lib/firmware/ | wc -l)
           echo "固件数量: $n"
-          [ "$n" -ge 10 ] || { echo "!! 固件数量异常（实机有 15 个）"; exit 1; }
+          [ "$n" -eq 15 ] || { echo "!! 固件数量 $n != 15（实机与仓库均为 15，少一个即拷贝期丢件）"; exit 1; }
 
       - name: Fetch roceos web-UI payload into userpatches/overlay
         # 官方 iNextOS 镜像自带 roceos 网页后台（/opt/roceos + /opt/roceos-ai + 3 个
@@ -189,7 +191,7 @@ jobs:
             BOARD=kickpi-k1 \
             BRANCH=vendor \
             RELEASE=trixie \
-            ENABLE_EXTENSIONS="istorenext,kickpi-k1-maxio,kickpi-k1-wifi,kickpi-k1-roceos" \
+            ENABLE_EXTENSIONS="istorenext,kickpi-k1-maxio,kickpi-k1-wifi,kickpi-k1-roceos,kickpi-k1-kernel-config" \
             BUILD_MINIMAL=no \
             BUILD_DESKTOP=no \
             KERNEL_CONFIGURE=no \
@@ -264,8 +266,8 @@ jobs:
           echo "--- WiFi 固件："
           ls /mnt/ir/lib/firmware/SWT6621S_* 2>/dev/null | head -20
           FW=$(ls /mnt/ir/lib/firmware/SWT6621S_* 2>/dev/null | wc -l)
-          if [ "$FW" -ge 10 ]; then echo "  OK  SWT6621S 固件 $FW 个"
-          else echo "  !!  SWT6621S 固件缺失（实机有 15 个）"; FAIL=1; fi
+          if [ "$FW" -eq 15 ]; then echo "  OK  SWT6621S 固件 $FW 个"
+          else echo "  !!  SWT6621S 固件 $FW 个 != 15（实机与仓库均为 15）"; FAIL=1; fi
 
           echo "--- SWT6621S 驱动模块："
           for m in swt6621s_wifi skw_sdio_lite skwbt; do
@@ -275,15 +277,47 @@ jobs:
           done
           if [ -n "$CFG" ]; then
             grep -E '^CONFIG_(SEEKWAVE_BSP_DRIVERS|SKW_SDIOHAL|WLAN_VENDOR_SWT6621S|SKW_BT)' "$CFG" || true
-            if grep -qE '^CONFIG_(SEEKWAVE_BSP_DRIVERS|WLAN_VENDOR_SWT6621S)=' "$CFG"; then
-              echo "  OK  SWT6621S 相关配置已生效"
+            # SEEKWAVE_BSP_DRIVERS 是 bool：只有 =y 才会让 seekwave/Makefile 编出 .ko；
+            # 旧门禁用 `(BSP|VENDOR)=` 匹配，被 CONFIG_WLAN_VENDOR_SWT6621S=m 假绿（历史 run 实证：
+            # 符号从未置位、CC 无一条 skw_，但门禁打印 OK）。必须同时断言 BSP=y 与 VENDOR 在位。
+            # 显示链路：显式断言（HDMI 报告：这些原先全靠 select/default，defconfig 无一字）
+            if grep -qE '^CONFIG_DRM_ROCKCHIP=y' "$CFG" \
+               && grep -qE '^CONFIG_ROCKCHIP_DW_HDMI=y' "$CFG" \
+               && grep -qE '^CONFIG_DRM_DW_HDMI_CEC=y' "$CFG" \
+               && grep -qE '^CONFIG_DRM_EDID=y' "$CFG" \
+               && grep -qE '^CONFIG_DRM_LOAD_EDID_FIRMWARE=y' "$CFG"; then
+              echo "  OK  DRM/HDMI/CEC/EDID 配置在位"
             else
-              echo "  !!  SWT6621S 相关配置未生效"; FAIL=1
+              echo "  !!  DRM/HDMI 链路配置缺失（显示/CEC/EDID 会静默失效）"; FAIL=1
             fi
-            if grep -qE '^CONFIG_SATA_AHCI_PLATFORM=y|^CONFIG_AHCI_DWC=' "$CFG"; then
-              echo "  OK  SATA AHCI 配置在位"
+            # 板载按键/摄像头/蓝牙按实机对齐为 =y（extensions/kickpi-k1-kernel-config.sh），
+            # 这里断言 CFG80211 必须在位（否则 WLAN_VENDOR_SWT6621S 被 olddefconfig 丢掉）
+            if grep -qE '^CONFIG_CFG80211=' "$CFG" && grep -qE '^CONFIG_MAC80211=' "$CFG"; then
+              echo "  OK  CFG80211/MAC80211 在位"
             else
-              echo "  !!  SATA AHCI 配置缺失（实机有 ata1 控制器）"; FAIL=1
+              echo "  !!  CFG80211/MAC80211 缺失 —— SWT6621S WiFi 不会被配置"; FAIL=1
+            fi
+            if grep -qE '^CONFIG_SEEKWAVE_BSP_DRIVERS=y' "$CFG" \
+               && grep -qE '^CONFIG_WLAN_VENDOR_SWT6621S=' "$CFG" \
+               && grep -qE '^CONFIG_SKW_SDIOHAL=' "$CFG" \
+               && grep -qE '^CONFIG_SKW_BT=' "$CFG"; then
+              echo "  OK  SWT6621S 相关配置已生效（SEEKWAVE_BSP_DRIVERS=y）"
+            else
+              echo "  !!  SWT6621S 相关配置未生效（需 CONFIG_SEEKWAVE_BSP_DRIVERS=y）"; FAIL=1
+            fi
+            # 实机 /proc/modules 无 ahci*（SATA 主机内建）→ 必须 =y：=m 时 rootfs 没有该 .ko，
+            # SATA 不 probe、root-on-SATA/热插拔全无（旧门禁 `CONFIG_AHCI_DWC=` 连 =m 都放行）。
+            if grep -qE '^CONFIG_SATA_AHCI_PLATFORM=y|^CONFIG_AHCI_DWC=y' "$CFG"; then
+              echo "  OK  SATA AHCI 配置在位（=y 内建）"
+            else
+              echo "  !!  SATA AHCI 配置缺失或为 =m（实机有 ata1 控制器）"; FAIL=1
+            fi
+            # 实机 /proc/config.gz: PCI_MSI=y；6.1 里 arm64 不 select、Kconfig 无 default →
+            # 不显式开就退化到 INTx（NVMe 队列/中断亲和失效，吞吐与 CPU 占用劣化）。
+            if grep -qE '^CONFIG_PCI_MSI=y' "$CFG"; then
+              echo "  OK  CONFIG_PCI_MSI=y"
+            else
+              echo "  !!  CONFIG_PCI_MSI 未启用（NVMe/PCIe 将退化 INTx）"; FAIL=1
             fi
             if grep -qE '^CONFIG_USB_SERIAL_OPTION=m|^CONFIG_USB_NET_QMI_WWAN=m' "$CFG"; then
               echo "  OK  4G/5G(USB 串口/QMI) 配置在位"

@@ -31,11 +31,16 @@ function post_family_tweaks__kickpi_k1_wifi_firmware() {
             cp -f "$f" "$dst/" && n=$((n+1))
         done
     done
-    if [[ $n -lt 10 ]]; then
-        display_alert "$BOARD" "SWT6621S 固件只落了 $n 个（应 ≥15）" "warn"
-    else
-        display_alert "$BOARD" "SWT6621S 固件已落镜像 $n 个" "info"
+    # 双源循环（/tmp/overlay + userpatches/overlay）会把同名文件数两遍，所以按【镜像内实际
+    # 文件数】计；实机 /lib/firmware 与本仓库 firmware/ 都恰好 15 个 → 少一个即拷贝期丢件
+    # （历史上阈值是 10，丢 5 个照样放行），必须硬失败而不是 warn。
+    local real
+    real=$(ls "${dst}"/SWT6621S_* 2>/dev/null | wc -l)
+    if [[ ${real} -ne 15 ]]; then
+        display_alert "$BOARD" "SWT6621S 固件落了 ${real} 个（实机/仓库均为 15）" "err"
+        exit_with_error "SWT6621S 固件数量 ${real} != 15"
     fi
+    display_alert "$BOARD" "SWT6621S 固件已落镜像 ${real} 个" "info"
     return 0
 }
 
@@ -74,9 +79,14 @@ function custom_kernel_config__kickpi_k1_swt6621s() {
 		display_alert "${EXTENSION}" "追加 Makefile 挂钩: $WM" "info"
 	fi
 
-	# 三块：平台 HAL(SDIO) + WiFi + 蓝牙；SKW_NO_CONFIG=y 表示不依赖 dts 配置
-	opts_m+=("SEEKWAVE_BSP_DRIVERS" "SKW_SDIOHAL" "WLAN_VENDOR_SWT6621S" "SKW_BT")
-	opts_y+=("SKW_NO_CONFIG")
+	# SEEKWAVE_BSP_DRIVERS 是 bool（补丁里 menuconfig … bool），写进 opts_m 会被 kconfig 直接拒绝
+	# （`.config:2865:warning: symbol value 'm' invalid for SEEKWAVE_BSP_DRIVERS`，历史 CI run 日志实证），
+	# 符号永不置位 → seekwave/Makefile 与本扩展追加的 `obj-$(CONFIG_SEEKWAVE_BSP_DRIVERS)` 都不生效
+	# → 三个 .ko（swt6621s_wifi / skw_sdio_lite / skwbt）一个都编不出来，且旧门禁被
+	# CONFIG_WLAN_VENDOR_SWT6621S=m 假绿。故必须走 opts_y（=y）。
+	# 其余三个是 tristate（drivers/.../Kconfig 逐个核实），保持 =m 作为模块随镜像。
+	opts_y+=("SEEKWAVE_BSP_DRIVERS" "SKW_NO_CONFIG")
+	opts_m+=("SKW_SDIOHAL" "WLAN_VENDOR_SWT6621S" "SKW_BT")
 
 	if [[ -f .config ]]; then
 		# 自检各 Kconfig 项确实存在（注意符号的真实写法与所在文件，

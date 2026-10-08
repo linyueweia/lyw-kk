@@ -7854,11 +7854,11 @@
 +//#define CONFIG_SKW_HOST_PLATFORM_FULLHAN /*support the fullhan power on api*/
 +//#define CONFIG_SKW_HOST_PLATFORM_ROCKCHIP
 +#ifdef CONFIG_SKW_NO_CONFIG
-+#define  MODEM_ENABLE_GPIO   	-1
++#define  MODEM_ENABLE_GPIO   	125
 +#define  HOST_WAKEUP_GPIO_IN 	-1
 +#define  MODEM_WAKEUP_GPIO_OUT  -1
 +#else
-+#define  MODEM_ENABLE_GPIO   	-1 /*wifi_chip power on gpio num*/
++#define  MODEM_ENABLE_GPIO   	125 /*wifi_chip power on gpio num*/
 +#define  HOST_WAKEUP_GPIO_IN 	-1 /*host wake gpio num*/
 +#define  MODEM_WAKEUP_GPIO_OUT  -1 /*chip wake gpio num*/
 +#endif

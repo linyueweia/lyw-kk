@@ -1,8 +1,8 @@
 # Rockchip RK3568 quad core, KICKPI K1 (V1.2) SBC
 #   compatible: kickpi,k1 / rockchip,rk3568   (vendor firmware may report rk3568-kickpi-k1a)
-#   NET : 2x GbE (gmac0@fe2a0000, gmac1@fe010000) + SDIO WiFi (AIC8800)
+#   NET : 2x GbE (gmac0@fe2a0000, gmac1@fe010000) + SDIO WiFi (Seekwave SWT6621S, 1ffe:6621)
 #   STO : eMMC 64G (sdhci) + microSD (sdmmc0) + M.2 NVMe (pcie3x2)
-#   PMIC: RK809 + fan53555(vdd_cpu);  LED: kickpi:blue:work;  FAN: gpio-fan
+#   PMIC: RK809 + fan53555(vdd_cpu);  LED: kickpi:blue:work;  FAN: leds/fan (GPIO0 RK_PD6, 非 PWM)
 BOARD_NAME="KICKPI K1"
 BOARD_VENDOR="kickpi"
 BOARDFAMILY="rk35xx"

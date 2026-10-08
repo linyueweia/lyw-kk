@@ -100,7 +100,7 @@ index 000000000000..111111111111
 + * Source from https://github.com/zuyih/linux-cubie/blob/c5ea47e5f899042abe54437ced1fd49ac1226582/drivers/net/phy/maxio.c,
 + * with minor modifications.
 + */
-+#define MAXIO_PHY_VER			"v1.8.1.13-dirty"
++#define MAXIO_PHY_VER			"v1.8.1.1"
 +#define MAXIO_PAGE_SELECT		0x1f
 +#define MAXIO_MAE0621A_WORK_STATUS_REG	0x1d
 +#define MAXIO_MAE0621A_CLK_MODE_REG	0x02
@@ -390,7 +390,7 @@ index 000000000000..111111111111
 +	 */
 +	maxio_write_paged(phydev, 0xd92, 0x2, 0x200a);
 +
-+	printk("maxio_mae0621a_probe clkmode(oscillator) PHY_ID: 0x%x\n", phydev->phy_id);
++	printk("maxio_mae0621a_probe clkmode(crystal) PHY_ID: 0x%x\n", phydev->phy_id);
 +
 +	PHY_WRITE(phydev, MAXIO_PAGE_SELECT, 0x0);
 +	mdelay(100);

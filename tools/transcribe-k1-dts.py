@@ -287,8 +287,9 @@ out += [
     '#include "rk3568.dtsi"',
     '',
     '/ {',
-    '\tmodel = "KICKPI K1";',
-    '\tcompatible = "kickpi,k1", "rockchip,rk3568";',
+    # 身份对齐官方 6.1 SDK（rk3568-kickpi-k1.dtsi），kickpi,k1 保留为次级 compatible
+    '\tmodel = "Rockchip RK3568 KICKPI K1 Board";',
+    '\tcompatible = "rockchip,rk3568-kickpi-k1", "kickpi,k1", "rockchip,rk3568";',
     '',
     '\t/* ===== 板级节点（实机全量转写） ===== */',
 ]
