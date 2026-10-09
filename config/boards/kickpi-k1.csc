@@ -69,6 +69,42 @@ function post_family_tweaks__kickpi_k1_network_interfaces() {
 		|| exit_with_error "udev rule for eth0/fe010000 missing"
 	grep -q '^DEFAULT_INTERFACE=eth0$' "${SDCARD}/root/.default-network" \
 		|| exit_with_error ".default-network wrong"
-	display_alert "$BOARD" "K1 network pinned: eth0=fe010000(LAN 192.168.100.1), eth1=fe2a0000" "info"
+	# ── G1：首启时「LAN 静态配置生成」与「NetworkManager 启动」之间没有排序 ─────────
+	# 取证（deleg_13c8d3f3，kk-static.json gap G1）：
+	#   istorenext-init-network.service  只有 After=local-fs.target / Before=networking.service
+	#   NetworkManager.service           只有 After=network-pre.target dbus.service
+	#   而 network-pre.target 没有被任何【已使能】单元拉入（systemd-network-generator/nftables
+	#   均未启用），该前置关系在首启时形同虚设 → 两个单元并行启动，NM 可能在
+	#   /etc/network/interfaces 生成之前就接管 eth0，与 ifupdown 抢 LAN 口，
+	#   192.168.100.1（管理界面入口）就可能配不上 —— 正是「插上网线拿不到该有的地址」。
+	# 修法：给 NM 加 drop-in，把它排在 istorenext-init-network.service 与 networking.service
+	# 之后。二者都没有被 NM Wants，排序只在「同在启动队列」时生效：
+	#   首启：二者均使能 → 生效；后续 istorenext-init-network 自 disable → 排序为空操作。
+	# 已核过无排序环（networking.service 的 Before 只有 network.target/shutdown.target/
+	# network-online.target，不回指 NM）。
+	display_alert "$BOARD" "KICKPI K1: pin NetworkManager after iStoreNext LAN init (gap G1)" "info"
+	mkdir -p "${SDCARD}/etc/systemd/system/NetworkManager.service.d"
+	cat <<- 'EOF' > "${SDCARD}/etc/systemd/system/NetworkManager.service.d/10-k1-lan-order.conf"
+		# KICKPI K1 板级：先让 iStoreNext 把 LAN（eth0 → 192.168.100.1）写进
+		# /etc/network/interfaces 并由 networking.service 应用，NM 再启动。
+		# 否则首启 NM 会先接管 eth0（此时 interfaces 还没生成），与 ifupdown 抢口。
+		[Unit]
+		After=istorenext-init-network.service networking.service
+	EOF
+
+	# 自证：三样东西必须真的落到镜像里
+	for f in etc/udev/rules.d/70-persistent-net.rules root/.default-network etc/eth_order \
+		etc/systemd/system/NetworkManager.service.d/10-k1-lan-order.conf; do
+		[[ -e "${SDCARD}/${f}" ]] || exit_with_error "network init file missing: ${f}"
+	done
+	grep -q 'KERNELS=="fe010000.ethernet", NAME:="eth0"' \
+		"${SDCARD}/etc/udev/rules.d/70-persistent-net.rules" \
+		|| exit_with_error "udev rule for eth0/fe010000 missing"
+	grep -q '^DEFAULT_INTERFACE=eth0$' "${SDCARD}/root/.default-network" \
+		|| exit_with_error ".default-network wrong"
+	grep -q '^After=istorenext-init-network.service networking.service$' \
+		"${SDCARD}/etc/systemd/system/NetworkManager.service.d/10-k1-lan-order.conf" \
+		|| exit_with_error "NM LAN-order drop-in wrong"
+	display_alert "$BOARD" "K1 network pinned: eth0=fe010000(LAN 192.168.100.1), eth1=fe2a0000; NM ordered after LAN init" "info"
 	return 0
 }
