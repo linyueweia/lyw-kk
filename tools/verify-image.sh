@@ -21,7 +21,11 @@ bad() { echo "  ✗ $*"; FAIL=1; }
 echo "==== 镜像: $IMG ($(stat -c%s "$IMG") 字节) ===="
 
 echo
-echo "── (0) 引导区内嵌 DDR 固件指纹（必须是 1560MHz 系列，且不是别板固件）──"
+echo "── (0) 引导区内嵌 DDR 固件指纹（必须 = K1 真机 eMMC 原厂同款 v1.23-03ea844c5d）──"
+# 证据链（2026-10-12 定案，详见 build.yml DDR 段注释）：
+#   K1 真机原厂 = ddr-v1.23-03ea844c5d = rkbin 的 rk3568_ddr_1056MHz_v1.23.bin；
+#   框架默认 1560_v1.21 未在 K1 实测（同方案 T68M 上训练失败）；1560_v1.26 在 K1 上 SPL 即断。
+#   本板原厂固件内字符串【不含】任何频率串（1056/1560MHz 均 False），所以按指纹判。
 python3 - "$IMG" <<'PYEOF' || FAIL=1
 import sys, pathlib
 img = sys.argv[1]
@@ -35,22 +39,24 @@ for base in ("build/cache/sources/rkbin-tools/rk35", "build/cache/sources/rkbin/
         if region.find(blob) >= 0:
             names.append(f.name)
 print("    命中:", names or "（未匹配到本地 rkbin 固件，退化用字符串判断）")
-bad = [n for n in names if "1560MHz" not in n]
-if bad:
-    print("    ✗ 内嵌 DDR 非 1560MHz 系列:", bad); sys.exit(1)
-if names:
-    print("    ✓ 内嵌 DDR 为 1560MHz 系列:", names)
+good = [n for n in names if n.startswith("rk3568_ddr_1056MHz_v1.23")]
+if names and not good:
+    print("    ✗ 内嵌 DDR 不是真机原厂同款 rk3568_ddr_1056MHz_v1.23.bin:", names); sys.exit(1)
+if good:
+    print("    ✓ 内嵌 DDR = 真机 eMMC 原厂同款:", good)
 else:
     sys.exit(0)
 PYEOF
-if strings -n 8 <(dd if="$IMG" bs=512 skip=64 count=800 status=none 2>/dev/null) 2>/dev/null | grep -qiE 'ddr.*v1\.[0-9]+'; then
-    DDRLINE="$(dd if="$IMG" bs=512 skip=64 count=800 status=none 2>/dev/null | strings | grep -iE 'ddr.*v1\.[0-9]+|fwver' | head -2)"
-    echo "$DDRLINE" | sed 's/^/    /'
-    if echo "$DDRLINE" | grep -qiE '1056MHz|f366f69a7d'; then
-        bad "引导区 DDR 固件是 1056MHz / T68M 的 V1.18（本板需 1560MHz）"
-    else
-        ok "引导区 DDR 非 1056MHz/V1.18"
-    fi
+IDB="$(dd if="$IMG" bs=512 skip=64 count=800 status=none 2>/dev/null)"
+DDRLINE="$(echo "$IDB" | strings | grep -iE 'ddr.*v1\.[0-9]+|fwver' | head -2 || true)"
+echo "$DDRLINE" | sed 's/^/    /'
+if echo "$DDRLINE" | grep -q '03ea844c5d'; then
+    ok "引导区 DDR 指纹 = 03ea844c5d（K1 真机原厂同款）"
+else
+    bad "引导区 DDR 指纹不是 03ea844c5d（真机原厂 = ddr-v1.23-03ea844c5d）"
+fi
+if echo "$DDRLINE" | grep -qiE 'f366f69a7d|v1\.21'; then
+    bad "引导区 DDR 是 T68M V1.18 或未实测的 v1.21 —— 本板启动链不通的已知风险"
 fi
 
 echo
