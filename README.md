@@ -34,10 +34,30 @@ K1 的网口 PHY 是 **Maxio MAE0621A**，**不在上游内核里**，必须打�
   `rk-6.1-rkr5.1` 厂商树重新锚定 `stmmac_resume` 那段 hunk**
   （厂商树用的是 `stmmac_hw_setup(ndev, false)` 两参数形式）；
   补丁已在本机拉取的厂商内核源码上做完 **dry-run + 实打验证**。
-- `extensions/kickpi-k1-maxio.sh` —— 用框架的 `custom_kernel_config` 钩子
-  写入 `opts_y+=("MAXIO_PHY")`，并在内核树里自检 Kconfig 项存在。
-- CI 的 `Verify image` 步骤会**在编出来的镜像里**断言 `CONFIG_MAXIO_PHY=y`
-  以及两个 GMAC 的状态，避免"配置里有但镜像里没有"。
+- `extensions/kickpi-k1-maxio.sh` —— 用框架的 `custom_kernel_config` 钩子把
+  **`MAXIO_PHY` 与 MAC 侧（`STMMAC_ETH`/`STMMAC_PLATFORM`/`DWMAC_ROCKCHIP`）都编成
+  模块（`opts_m`）**，并在内核树里自检 Kconfig 项与模块名。
+- CI 的 `Verify image` 步骤会**在编出来的镜像里**断言 `CONFIG_MAXIO_PHY=m`、
+  模块名与三个 MAC 符号、`maxio.ko` 实际落在 rootfs，避免"配置里有但镜像里没有"。
+
+### 为什么是模块（=m）而不是内建（=y）—— 在线更新安全
+
+本板只有这两个网口做管理面，一旦驱动在升级中丢失，设备就只剩"拔卡救"。
+
+- **内建（=y）是个死结**：`apt` 一升级内核，Image 连同驱动一起被换掉，
+  而内建驱动既不能重新装载、也不能事后重建 —— 没有任何补救路径。
+- **模块（=m）才有自愈链**（`extensions/kickpi-k1-module-selfheal.sh`）：
+  树外源码随镜像 → DKMS 注册 → `/etc/kernel/postinst.d` 钩子对新内核重编 →
+  开机自愈单元按 `uname -r` 补编后加载 → `/etc/modprobe.d` 的 `softdep` 保证
+  maxio 先于 MAC 驱动注册（否则 PHY 会被通用驱动抢绑，`lyw-kf` 实测坑④）。
+- 方案与实证来自同板同芯片的 **lyw-kf（飞牛线）**：2026-10-12 走官方在线更新装上
+  新内核（c951→c1145），钩子自动编出 `maxio.ko`，**15 秒后双网口恢复**，全程无人干预。
+- **刻意不钉死内核**：不做 `apt-mark hold`、不写 `apt preferences -1`。
+  在线更新照常升，网口靠模块自愈回来；配套的 `extensions/kickpi-k1-update-guard.sh`
+  负责"更新后自动体检"与"引导快照兜底回滚"，不是禁止更新。
+- 开机路径零负担：自愈单元正常启动只做几次文件存在判断（毫秒级），
+  **只有 maxio 缺失时才现编**；没有本内核 headers 时写标记，不会每开机白试一遍。
+
 
 ## 树外驱动之二：SWT6621S SDIO WiFi + 蓝牙
 

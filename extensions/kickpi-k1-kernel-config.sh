@@ -34,10 +34,14 @@ function custom_kernel_config__kickpi_k1_storage_irq() {
 	# 一旦镜像里 modules.dep 没覆盖就静默失效（按键/摄像头无声无息），按实机对齐为 =y。
 	opts_y+=("KEYBOARD_ADC" "KEYBOARD_GPIO" "VIDEO_GC5035" "BT_HCIUART")
 
-	# 网口 PHY 驱动兜底（三线判据：实机 /proc/config.gz =y、官方 6.1 drivers/net/phy/Kconfig:300 有、
+	# 网口 PHY 驱动（三线判据：实机 /proc/config.gz 有、官方 6.1 drivers/net/phy/Kconfig:300 有、
 	# armbian rk-6.1-rkr5.1 原生无该符号 → 只能由 general-drv-net-phy-maxio-mae0621a.patch 提供）。
-	# 静态 defconfig 里没有它，脱离 kickpi-k1-maxio 扩展会编出两个口全哑的内核，故在此再写一次。
-	opts_y+=("MAXIO_PHY")
+	#
+	# ⚠ 这里【刻意不写 opts_y】——MAXIO_PHY 是 =m（模块），由 extensions/kickpi-k1-maxio.sh
+	#   通过 opts_m 设定。两处同时写会让 =y/=m 互相覆盖（顺序决定结果，属于静默失效）。
+	#   为什么必须 =m：内建驱动在"在线更新换了内核"时无法补救；模块化才有 DKMS + postinst 钩子
+	#   + 开机自愈（见 extensions/kickpi-k1-module-selfheal.sh）。
+	#   本钩子只保留"补丁必须在树里"的硬自检（缺它 = 两个千兆口全哑，构建立即失败）。
 
 	# HDMI/显示链路的隐式依赖（HDMI report：这些全部靠 select/default 拿到，defconfig 一个字都没有，
 	# 上游 select 条件一变就静默丢失；显式写 =y 与实机 /proc/config.gz 对齐）。

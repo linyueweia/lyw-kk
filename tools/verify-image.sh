@@ -113,18 +113,26 @@ if [[ -f "$DT" ]]; then
         # 实测实机 DT 两处 PHY 均为 compatible = "ethernet-phy-ieee802.3-c22"（通用 C22），
         # Maxio 驱动是按运行时读到的 PHY ID 匹配的。所以这里该查两件事：
         #   (a) 两个 PHY 节点确实存在（C22）
-        #   (b) 镜像内核【配置】里 CONFIG_MAXIO_PHY=y（这才是双千兆的命门）
+        #   (b) 内核配置里板级网络驱动是【模块 =m】（双千兆命门，且是在线更新自愈的前提）
         nphy=$(grep -c 'ethernet-phy-ieee802.3-c22' "$DTC" 2>/dev/null || echo 0)
         [[ "${nphy:-0}" -ge 2 ]] && ok "DT 里 PHY 节点 $nphy 个（通用 C22，实机即如此）" \
                                  || bad "DT 里 PHY 节点不足（找到 ${nphy:-0} 个，本板应为 2）"
         KCFG="$(ls "$MNT"/config-* 2>/dev/null | head -1 || true)"
         if [[ -n "$KCFG" ]]; then
-            if grep -qE '^CONFIG_MAXIO_PHY=y' "$KCFG"; then
-                ok "内核配置 CONFIG_MAXIO_PHY=y（双千兆命门）"
+            # 为什么是 =m 而不是 =y：内建驱动在"在线更新换了内核"时无法补救（不能装载/重建）；
+            # 模块化才有 DKMS + postinst 钩子 + 开机自愈这条链（见 extensions/kickpi-k1-module-selfheal.sh）。
+            # 为什么连 MAC 侧也要 =m：phylib 在 MAC 探测时就绑 PHY，内建 MAC 会先抢绑通用驱动，
+            # 晚到的 maxio 被跳过（lyw-kf PORTING 坑④ 实测）。
+            if grep -qE '^CONFIG_MAXIO_PHY=m' "$KCFG"; then
+                ok "内核配置 CONFIG_MAXIO_PHY=m（双千兆命门 + 可自愈）"
             else
-                bad "内核配置未开 CONFIG_MAXIO_PHY —— 两个网口将无法工作"
+                bad "内核配置不是 CONFIG_MAXIO_PHY=m —— 内建/未开都会让在线更新后无法恢复网口"
             fi
-            grep -E '^CONFIG_(MAXIO_PHY|MOTORCOMM_PHY|SEEKWAVE|SWT6621)' "$KCFG" | sed 's/^/       /' || true
+            for sym in STMMAC_ETH STMMAC_PLATFORM DWMAC_ROCKCHIP; do
+                grep -qE "^CONFIG_${sym}=m" "$KCFG" && ok "CONFIG_${sym}=m（PHY 绑定时序可控）" \
+                    || bad "CONFIG_${sym} 不是 =m（内建 MAC 会抢绑 PHY，maxio 自愈失效）"
+            done
+            grep -E '^CONFIG_(MAXIO_PHY|STMMAC_ETH|STMMAC_PLATFORM|DWMAC_ROCKCHIP|PHYLIB|PCS_XPCS)=' "$KCFG" | sed 's/^/       /' || true
         else
             echo "    · boot 分区未见 config-*（跳过内核配置检查）"
         fi
@@ -141,6 +149,59 @@ for f in "$MNT/armbianEnv.txt" "$MNT/extlinux/extlinux.conf" "$MNT/fnEnv.txt"; d
 done
 if [[ -f "$MNT/boot.scr" ]]; then
     strings "$MNT/boot.scr" 2>/dev/null | grep -q 'kickpi-k1.dtb' && ok "boot.scr 含本板 DTB" || echo "    · boot.scr 未含本板 DTB 名（由 armbianEnv 提供亦可）"
+fi
+
+echo
+echo "── (4) 挂载 rootfs，校验板级网络驱动自愈链（在线更新后网口能不能回来就靠这条链）──"
+# 为什么要在镜像里断言这条链：本板双千兆靠自建 Maxio PHY 驱动，一旦它在在线更新换内核后丢失，
+# 两个网口同时失联 = 设备变砖（只能拔卡）。链上任一环缺失，都会让"更新后自动恢复网口"变成空话，
+# 所以这里逐件断言（方案与实证见 extensions/kickpi-k1-module-selfheal.sh 头部注释）。
+RMNT=/mnt/ib_r
+mkdir -p "$RMNT"
+RP=""; for c in "${LOOP}p2" "${LOOP}2"; do [[ -e "$c" ]] && RP="$c" && break; done
+if [[ -z "$RP" ]]; then
+    bad "没有 rootfs 分区（p2）—— 无法校验自愈链"
+else
+    if mount -o ro "$RP" "$RMNT" 2>/dev/null; then
+        for f in usr/src/kickpi-k1/maxio.c usr/src/kickpi-k1/Makefile \
+                 usr/local/sbin/kickpi-k1-build-maxio usr/local/sbin/kickpi-k1-load-modules \
+                 etc/kernel/postinst.d/zz-kickpi-k1-maxio \
+                 etc/systemd/system/kickpi-k1-modules.service \
+                 etc/modprobe.d/kickpi-k1.conf etc/modules-load.d/kickpi-k1.conf \
+                 usr/local/sbin/k1-net-health etc/systemd/system/k1-update-check.service \
+                 usr/local/sbin/k1-boot-guard etc/systemd/system/k1-boot-guard.service; do
+            [[ -e "$RMNT/$f" ]] && ok "自愈/自检件在位: $f" || bad "缺件: $f"
+        done
+        grep -q 'module_phy_driver' "$RMNT/usr/src/kickpi-k1/maxio.c" 2>/dev/null \
+            && ok "树外源码 maxio.c 有效（含 module_phy_driver）" \
+            || bad "maxio.c 内容异常（补丁提取失败？）"
+        grep -q 'softdep dwmac-rockchip pre: maxio' "$RMNT/etc/modprobe.d/kickpi-k1.conf" 2>/dev/null \
+            && ok "softdep 已保证 maxio 先于 MAC 驱动注册" \
+            || bad "缺 softdep（PHY 会被通用驱动抢绑，自愈失效）"
+        KO="$(ls "$RMNT"/lib/modules/*/kernel/drivers/net/phy/maxio.ko 2>/dev/null | head -1 || true)"
+        [[ -n "$KO" ]] && ok "maxio.ko 已随镜像安装（$(basename "$(dirname "$(dirname "$KO")")") 内核）" \
+                       || bad "镜像里没有 maxio.ko（=m 构建产物缺失，当前内核网口起不来）"
+        if ls "$RMNT"/usr/src/linux-headers-* >/dev/null 2>&1 || ls -d "$RMNT"/lib/modules/*/build >/dev/null 2>&1; then
+            ok "内核 headers 随镜像安装（离线也能现编 maxio）"
+        else
+            echo "    · 镜像未装内核 headers（可选件）：换内核后由 postinst 钩子自动 apt 拉 linux-headers-\$rel；"
+            echo "      本仓自己的内核包/内核升级包本身就带 maxio.ko，因此不装也不影响网口恢复"
+        fi
+        [[ -d "$RMNT/var/lib/dkms/maxio" ]] && ok "DKMS 已注册 maxio（将来新内核自动重编）" \
+            || echo "    · DKMS 未注册（仍有 postinst 钩子 + 开机自愈兜底）"
+        grep -q 'kickpi-k1-modules.service' "$RMNT/etc/systemd/system/multi-user.target.wants/kickpi-k1-modules.service" 2>/dev/null \
+            && ok "开机自愈单元已 enable" \
+            || bad "kickpi-k1-modules.service 未 enable（重启不加载板级模块）"
+        # 反面断言：不许出现"钉死内核"的痕迹（本板设计是更新后自愈，不是禁止更新）
+        if grep -rqs 'linux-image-vendor-rk35xx' "$RMNT/etc/apt/preferences.d/" 2>/dev/null; then
+            bad "镜像里出现内核 apt pin（与设计相悖：内核不钉死）"
+        else
+            ok "无内核 pin（在线更新不受阻）"
+        fi
+        umount "$RMNT" 2>/dev/null || true
+    else
+        bad "rootfs 分区挂载失败"
+    fi
 fi
 
 echo

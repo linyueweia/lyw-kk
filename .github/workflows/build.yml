@@ -156,6 +156,14 @@ jobs:
             || { echo "!! roceos 扩展缺失"; exit 1; }
           grep -q 'kickpi_k1_storage_irq' build/userpatches/extensions/kickpi-k1-kernel-config.sh \
             || { echo "!! kernel-config 扩展缺失（AHCI_DWC/PCI_MSI 兜底）"; exit 1; }
+          # 在线更新护栏（两条互补，都不要少）：
+          #   1) module-selfheal：板级 PHY 驱动【模块化】+ DKMS + 内核 postinst 钩子 + 开机自愈
+          #      —— 这是"在线更新内核后网口还能起来"的正解（lyw-kf/飞牛线已实机跑通）。
+          #   2) update-guard：更新后自动体检 + 引导快照回滚兜底 + 救急通道自检（刻意不钉内核）。
+          grep -q 'kickpi_k1_module_selfheal' build/userpatches/extensions/kickpi-k1-module-selfheal.sh \
+            || { echo "!! module-selfheal 扩展缺失（换内核后网口无法自愈）"; exit 1; }
+          grep -q 'kickpi_k1_update_guard' build/userpatches/extensions/kickpi-k1-update-guard.sh \
+            || { echo "!! update-guard 扩展缺失（更新后体检/回滚兜底缺失）"; exit 1; }
 
           echo "--- SWT6621S 固件 -> overlay/lib/firmware/"
           mkdir -p build/userpatches/overlay/lib/firmware
@@ -197,11 +205,13 @@ jobs:
           # 注释必须放在整条命令【之前】：放进 "\" 续行之间会把后续参数整段注释掉
           # （曾因此丢掉 KERNEL_CONFIGURE=no，框架弹出交互式菜单并以 error 43 失败）
           # ENABLE_EXTENSIONS 是扩展白名单（框架逐个 enable_extension），必须含自建扩展
+          # 注：本框架没有 INSTALL_HEADERS 开关；内核 headers 由 kickpi-k1-module-selfheal 扩展
+          #     自己 apt/dpkg 装进镜像（可选件，只为离线重编；换内核后 postinst 钩子也会自动拉）。
           ./compile.sh build \
             BOARD=kickpi-k1 \
             BRANCH=vendor \
             RELEASE=trixie \
-            ENABLE_EXTENSIONS="istorenext,kickpi-k1-maxio,kickpi-k1-wifi,kickpi-k1-roceos,kickpi-k1-kernel-config" \
+            ENABLE_EXTENSIONS="istorenext,kickpi-k1-maxio,kickpi-k1-wifi,kickpi-k1-roceos,kickpi-k1-kernel-config,kickpi-k1-module-selfheal,kickpi-k1-update-guard" \
             BUILD_MINIMAL=no \
             BUILD_DESKTOP=no \
             KERNEL_CONFIGURE=no \
