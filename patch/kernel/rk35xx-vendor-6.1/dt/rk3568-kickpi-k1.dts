@@ -759,19 +759,24 @@
 	status = "okay";
 };
 
+/* NPU 关闭（与成功线 T68M 一致：其 DTS 注释明写"厂商出厂设备树里亦为
+   disabled，此处同样保持关闭"）。实机教训：okay 后 15.93s 必 panic——
+   rockchip-pm-domain 向 npu 域发 idle 请求等不到 ack
+   （failed to get ack on domain 'npu', val=0x1ee），触发 vendor 内核
+   panic_on_set_idle 调试开关直接 Kernel panic。软路由/NAS 场景不用 NPU。 */
 &rknpu {
-	status = "okay";
+	status = "disabled";
 	rknpu-supply = <&vdd_npu>;
 };
 
 &rknpu_mmu {
-	status = "okay";
+	status = "disabled";
 };
 
 &bus_npu {
 	compatible = "rockchip,rk3568-bus";
 	rockchip,busfreq-policy = "clkfreq";
-	status = "okay";
+	status = "disabled";
 	bus-supply = <&vdd_logic>;
 	pvtm-supply = <&vdd_cpu>;
 };
