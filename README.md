@@ -58,6 +58,26 @@ K1 的网口 PHY 是 **Maxio MAE0621A**，**不在上游内核里**，必须打�
 - 开机路径零负担：自愈单元正常启动只做几次文件存在判断（毫秒级），
   **只有 maxio 缺失时才现编**；没有本内核 headers 时写标记，不会每开机白试一遍。
 
+### 第二网口（eth1/fe2a0000）整口不可用的真因：PHY 复位脚写错（2026-10-14 串口实机定案）
+
+串口日志的铁证：`mdio_bus stmmac-0: MDIO device at address 2/1/0 is missing.`（三个地址全无应答）
+→ `rk_gmac-dwmac fe2a0000.ethernet eth1: __stmmac_open: Cannot attach to PHY (error: -19)`
+→ 该口整口不可用；而 eth0(fe010000) 正常 `PHY [stmmac-1:00] driver [MAE0621A-Q2C]`。
+
+把本仓 DTB 与**同板双口可用的飞牛线 DTB** 逐属性对照，差异只有一处：
+
+| 节点 | 飞牛线（可用） | 本仓原值 |
+|---|---|---|
+| `ethernet@fe2a0000` | `/pinctrl/gpio@fe750000`（gpio2） **pin 27** | `/pinctrl/gpio@fe760000`（gpio3） pin 11 ❌ |
+| `ethernet@fe010000` | `gpio@fe760000`（gpio3） pin 7 | 同左 ✅ |
+
+即：第二 PHY 的复位脚被写到了**另一个控制器与引脚**上 → PHY 一直被按在复位里 → MDIO 不应答。
+`&gmac0` 里那行**注释写的是 `fe750000 pin 0x1b`（正确值），代码却是 `&gpio3 RK_PB3`**——
+注释与代码自相矛盾，是这次排障最耗时的干扰项；台账教训：注释里的寄存器/引脚值必须能被
+门禁验证，否则就是误导。现已在 `tools/verify-image.sh` 加**复位脚门禁**（解析 DTB 的
+`snps,reset-gpio` 并解析 phandle 到控制器，两个口都断言到实机定案值）。
+
+
 ### 网口还有一层独立故障：EEE/LPI 省电（必须全关）
 
 通了也会掉线 —— 实机（与 lyw-OS 主路由线两端同时取证）：用网高峰 **34 次整口 Link Down/3h**、

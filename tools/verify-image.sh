@@ -128,6 +128,28 @@ if [[ -f "$DT" ]]; then
         nphy=$(grep -c 'ethernet-phy-ieee802.3-c22' "$DTC" 2>/dev/null || echo 0)
         [[ "${nphy:-0}" -ge 2 ]] && ok "DT 里 PHY 节点 $nphy 个（通用 C22，实机即如此）" \
                                  || bad "DT 里 PHY 节点不足（找到 ${nphy:-0} 个，本板应为 2）"
+        # PHY 复位脚门禁（2026-10-14 实机定案）：第二口曾因这一行写错控制器/引脚而整口不可用 ——
+        # PHY 被按在复位里 → 其 MDIO 地址 0/1/2 全无应答 → "Cannot attach to PHY (error: -19)"。
+        # 期望值与"双口可用的飞牛线 DTB"逐属性对照一致：
+        #   ethernet@fe2a0000 → /pinctrl/gpio@fe750000(gpio2) pin 27
+        #   ethernet@fe010000 → /pinctrl/gpio@fe760000(gpio3) pin 7
+        for spec in "/ethernet@fe2a0000 fe750000 27" "/ethernet@fe010000 fe760000 7"; do
+            set -- $spec; node="$1"; ctrl="$2"; want="$3"
+            rv="$(fdtget -t x "$DT" "$node" snps,reset-gpio 2>/dev/null || true)"
+            if [[ -z "$rv" ]]; then
+                bad "$node 缺 snps,reset-gpio（第二口 PHY 不会复位 → 整口不可用）"; continue
+            fi
+            ph=$((16#$(echo "$rv" | cut -d' ' -f1)))
+            pin=$((16#$(echo "$rv" | cut -d' ' -f2)))
+            got="$(fdtget -t x "$DT" "/pinctrl/gpio@$ctrl" phandle 2>/dev/null || true)"
+            if [[ -n "$got" && "$((16#$got))" == "$ph" && "$pin" == "$want" ]]; then
+                ok "$(basename "$node") reset-gpio → gpio@$ctrl pin $pin（实机定案值，第二口可用）"
+            else
+                bad "$(basename "$node") reset-gpio 控制器 phandle=$(printf '0x%x' "$ph") pin=$pin \
+—— 期望 gpio@$ctrl pin $want（写错则该口 PHY 永不复位、整口不可用）"
+            fi
+        done
+
         KCFG="$(ls "$MNT"/config-* 2>/dev/null | head -1 || true)"
         if [[ -n "$KCFG" ]]; then
             # 为什么是 =m 而不是 =y：内建驱动在"在线更新换了内核"时无法补救（不能装载/重建）；

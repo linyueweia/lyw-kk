@@ -216,8 +216,17 @@
 		     &gmac0_rx_bus2
 		     &gmac0_rgmii_clk
 		     &gmac0_rgmii_bus>;
-	/* 厂商实机：reset = gpio3 PB3（fe750000 pin 0x1b）active-low，MAC 侧单持有 */
-	snps,reset-gpio = <&gpio3 RK_PB3 GPIO_ACTIVE_LOW>;
+	/* 第二 PHY 复位：**GPIO2_D3**（控制器 /pinctrl/gpio@fe750000 = gpio2，pin 0x1b = 27）active-low，MAC 侧单持有。
+	   ⚠ 历史 bug（2026-10-14 实机定案）：此处原先误写成 <&gpio3 RK_PB3>（= gpio3 pin 11）——
+	   按到了完全不同的控制器与引脚 → 第二 PHY 一直处于复位 → 其 MDIO 总线地址 0/1/2 全无应答
+	   → stmmac 报 "Cannot attach to PHY (error: -19)"，整口不可用（第一口不受影响，因为它的
+	   reset 是同为 gpio3 pin 7 = GPIO3_A7，两侧一致）。
+	   铁证（同一块板、同一颗 MAE0621A，双口可用的飞牛线 DTB 对照）：
+	     ethernet@fe2a0000：KF = gpio@fe750000(gpio2) pin 27  ｜ KK 原值 = gpio@fe760000(gpio3) pin 11 ✗
+	     ethernet@fe010000：KF = gpio@fe760000(gpio3) pin 7   ｜ KK 原值 = gpio@fe760000(gpio3) pin 7 ✓
+	   即"第一口好、第二口死"的全部差异就在这一行；原注释里写的 fe750000 pin 0x1b 才是对的，
+	   代码没跟上（注释与代码自相矛盾是这次排障最耗时的干扰项）。 */
+	snps,reset-gpio = <&gpio2 RK_PD3 GPIO_ACTIVE_LOW>;
 	snps,reset-active-low;
 	snps,reset-delays-us = <0 20000 100000>;
 	tx_delay = <0x21>;
