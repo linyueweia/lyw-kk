@@ -189,6 +189,18 @@ else
         fi
         [[ -d "$RMNT/var/lib/dkms/maxio" ]] && ok "DKMS 已注册 maxio（将来新内核自动重编）" \
             || echo "    · DKMS 未注册（仍有 postinst 钩子 + 开机自愈兜底）"
+        # EEE/LPI 关闭（实机定案：网口间歇整口 Down 的根因，与 lyw-OS/lyw-kf 同案同修）
+        [[ -x "$RMNT/usr/local/sbin/kickpi-k1-eee-off.sh" ]] && ok "EEE 关闭脚本在位" \
+            || bad "缺 kickpi-k1-eee-off.sh（EEE 未关 = 链路间歇掉线会复发）"
+        grep -q -- '--set-eee' "$RMNT/usr/local/sbin/kickpi-k1-eee-off.sh" 2>/dev/null \
+            && ok "EEE 脚本含 --set-eee" || bad "EEE 脚本内容不对"
+        [[ -f "$RMNT/etc/systemd/system/kickpi-k1-eee-off.service" ]] \
+            && ok "EEE 关闭服务已装" || bad "缺 kickpi-k1-eee-off.service"
+        [[ -e "$RMNT/etc/systemd/system/multi-user.target.wants/kickpi-k1-eee-off.service" ]] \
+            && ok "EEE 服务已 enable" || bad "EEE 服务未 enable（重启不执行）"
+        [[ -x "$RMNT/etc/NetworkManager/dispatcher.d/90-kickpi-k1-eee-off" ]] \
+            && ok "NM dispatcher 在位（接口 up 后重新关 EEE）" \
+            || bad "缺 NM dispatcher（EEE 会随重新协商被打开）"
         grep -q 'kickpi-k1-modules.service' "$RMNT/etc/systemd/system/multi-user.target.wants/kickpi-k1-modules.service" 2>/dev/null \
             && ok "开机自愈单元已 enable" \
             || bad "kickpi-k1-modules.service 未 enable（重启不加载板级模块）"

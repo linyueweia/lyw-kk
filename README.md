@@ -58,6 +58,18 @@ K1 的网口 PHY 是 **Maxio MAE0621A**，**不在上游内核里**，必须打�
 - 开机路径零负担：自愈单元正常启动只做几次文件存在判断（毫秒级），
   **只有 maxio 缺失时才现编**；没有本内核 headers 时写标记，不会每开机白试一遍。
 
+### 网口还有一层独立故障：EEE/LPI 省电（必须全关）
+
+通了也会掉线 —— 实机（与 lyw-OS 主路由线两端同时取证）：用网高峰 **34 次整口 Link Down/3h**、
+深夜几乎不掉；对端 `phy_eee_wakeup_error_n=8126`、LPI 进出 7811 万次；两端 `rx_crc_errors=0`
+（排除线材）、SoC 37°C。`ethtool --set-eee <if> eee off` 后掉线归零。
+
+`extensions/kickpi-k1-net-eee.sh` 按三层持久化修它（缺一层都会复发）：
+开机服务 `kickpi-k1-eee-off.service` + **NetworkManager dispatcher**（每次接口 up 重关一次，
+因为 EEE 会随重新协商被打开）+ 脚本遍历**所有**真实网卡（含 USB 网卡）。
+另把 `device/power/control` 钉为 `on`（禁网卡运行时挂起）。与 `lyw-kf` 的
+`assets/kickpi-k1-eee-off.sh`、`lyw-OS` 的 `eth-eee-off` 同案同款。
+
 
 ## 树外驱动之二：SWT6621S SDIO WiFi + 蓝牙
 
