@@ -229,12 +229,18 @@ else
             && ok "EEE 脚本含 --set-eee" || bad "EEE 脚本内容不对"
         [[ -f "$RMNT/etc/systemd/system/kickpi-k1-eee-off.service" ]] \
             && ok "EEE 关闭服务已装" || bad "缺 kickpi-k1-eee-off.service"
-        [[ -e "$RMNT/etc/systemd/system/multi-user.target.wants/kickpi-k1-eee-off.service" ]] \
+        # 注意：这里必须用 -L（判"链接存在"）而不是 -e。-e 会跟随符号链接，而这些 .wants
+        # 链接的目标是绝对路径 /etc/systemd/system/...，在挂载镜像的场景下会被解析到 **runner
+        # 自己的根**（该文件不存在）→ 恒判悬空 → 镜像明明是对的也报"未 enable"（#38 实测误报）。
+        [[ -L "$RMNT/etc/systemd/system/multi-user.target.wants/kickpi-k1-eee-off.service" ]] \
+            || [[ -e "$RMNT/etc/systemd/system/multi-user.target.wants/kickpi-k1-eee-off.service" ]] \
             && ok "EEE 服务已 enable" || bad "EEE 服务未 enable（重启不执行）"
+        [[ -e "$RMNT/etc/systemd/system/kickpi-k1-eee-off.service" ]] \
+            && ok "EEE 单元文件在位（链接目标有效）" || bad "EEE 单元文件缺失（链接是悬空的）"
         [[ -x "$RMNT/etc/NetworkManager/dispatcher.d/90-kickpi-k1-eee-off" ]] \
             && ok "NM dispatcher 在位（接口 up 后重新关 EEE）" \
             || bad "缺 NM dispatcher（EEE 会随重新协商被打开）"
-        grep -q 'kickpi-k1-modules.service' "$RMNT/etc/systemd/system/multi-user.target.wants/kickpi-k1-modules.service" 2>/dev/null \
+        [[ -L "$RMNT/etc/systemd/system/multi-user.target.wants/kickpi-k1-modules.service" ]] 2>/dev/null \
             && ok "开机自愈单元已 enable" \
             || bad "kickpi-k1-modules.service 未 enable（重启不加载板级模块）"
         # EEE 第 4/5 层（2026-10-14 实机复现：只挂 NM dispatcher 时，roceos 走 ifupdown-ng
@@ -251,6 +257,10 @@ else
             && ok "NVMe 自愈脚本含 rk-pcie 重绑定" || bad "NVMe 自愈脚本内容不对"
         [[ -f "$RMNT/etc/systemd/system/kickpi-k1-nvme-selfheal.service" ]] \
             && ok "NVMe 自愈单元已装" || bad "缺 kickpi-k1-nvme-selfheal.service"
+        [[ -L "$RMNT/etc/systemd/system/multi-user.target.wants/kickpi-k1-nvme-selfheal.service" ]] \
+            && ok "NVMe 自愈单元已 enable" || bad "NVMe 自愈单元未 enable"
+        [[ -L "$RMNT/etc/systemd/system/multi-user.target.wants/kickpi-k1-net-roles.service" ]] \
+            && ok "网口角色归一单元已 enable" || bad "网口角色归一单元未 enable"
         # 网口角色归一（用户定义 WAN=eth0 / LAN=eth1）
         [[ -x "$RMNT/usr/local/sbin/kickpi-k1-net-roles.py" ]] \
             && ok "网口角色归一脚本在位" || bad "缺 kickpi-k1-net-roles.py"

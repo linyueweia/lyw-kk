@@ -140,7 +140,7 @@ function pre_umount_final_image__kickpi_k1_net_roles() {
 	local fail=0
 	[[ -x "${SDCARD}/usr/local/sbin/kickpi-k1-net-roles.py" ]] || {
 		display_alert "角色纠正脚本缺失或不可执行" "$EXTENSION" "err"; fail=1; }
-	python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" \
+	python3 -c "import ast,sys; ast.parse(open(sys.argv[1], encoding='utf-8').read())" \
 		"${SDCARD}/usr/local/sbin/kickpi-k1-net-roles.py" 2>/dev/null || {
 		display_alert "kickpi-k1-net-roles.py 语法错误" "$EXTENSION" "err"; fail=1; }
 	grep -q '/opt/roceos/data/roceos.db' "${SDCARD}/usr/local/sbin/kickpi-k1-net-roles.py" || {

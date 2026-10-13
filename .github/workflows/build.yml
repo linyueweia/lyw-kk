@@ -288,7 +288,9 @@ jobs:
             # EEE/LPI 必须全关件到位（实机定案：EEE 开着 = 链路间歇整口掉线）
             [ -x /mnt/ir/usr/local/sbin/kickpi-k1-eee-off.sh ] && echo "  OK  EEE 关闭脚本" \
               || { echo "  !!  缺 kickpi-k1-eee-off.sh（EEE 未关 = 间歇掉线会复发）"; FAIL=1; }
-            [ -e /mnt/ir/etc/systemd/system/multi-user.target.wants/kickpi-k1-eee-off.service ] \
+            # 用 -L：-e 会跟随链接，而 .wants 链接目标是绝对路径 /etc/...，在 runner 上恒判悬空（误报）
+            { [ -L /mnt/ir/etc/systemd/system/multi-user.target.wants/kickpi-k1-eee-off.service ] \
+              || [ -e /mnt/ir/etc/systemd/system/multi-user.target.wants/kickpi-k1-eee-off.service ]; } \
               && echo "  OK  EEE 服务已 enable" || { echo "  !!  EEE 服务未 enable"; FAIL=1; }
           else
             echo "  !!  镜像里找不到内核 config 文件"; FAIL=1
