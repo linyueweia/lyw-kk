@@ -357,8 +357,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: inextos-kickpi-k1
+          # 只打包压缩版（参照 lyw-OS）：raw .img 与 .img.xz 内容等价，
+          # raw 里全是零字节区，zip 再压一遍纯属浪费带宽/存储/下载时间。
           path: |
-            build/output/images/*.img
             build/output/images/*.img.xz
             build/output/images/*.sha
           retention-days: 14
