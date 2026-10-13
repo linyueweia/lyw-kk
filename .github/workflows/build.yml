@@ -251,16 +251,38 @@ jobs:
           echo "--- p2 内容:";  ls /mnt/ir | head -20
           FAIL=0
 
-          # ── 检查 1：内核配置里 MUST 打开 CONFIG_MAXIO_PHY（本板两个千兆口的命门）──
+          # ── 检查 1：内核配置里板级网络驱动必须【模块 =m】（双千兆命门 + 在线更新自愈前提）──
+          # 为什么断 =m 而不是 =y：内建驱动在"在线更新换了内核"时无法补救（不能装载/重建）；
+          # 模块化才有 DKMS + postinst 钩子 + 开机自愈这条链（extensions/kickpi-k1-module-selfheal.sh）。
+          # 为什么 MAC 侧也要 =m：phylib 在 MAC 探测时就绑 PHY，内建 MAC 会抢绑通用驱动，
+          # 晚到的 maxio 被跳过（lyw-kf PORTING 坑④ 实测）。
           CFG=$(ls /mnt/ib/config-* /mnt/ir/boot/config-* 2>/dev/null | head -1 || true)
           if [ -n "$CFG" ]; then
             echo "--- kernel config: $CFG"
-            if grep -qE '^CONFIG_MAXIO_PHY=y' "$CFG"; then
-              echo "  OK  CONFIG_MAXIO_PHY=y"
-            else
-              echo "  !!  CONFIG_MAXIO_PHY 未启用 —— 两个网口将无法工作"; FAIL=1
-            fi
-            grep -E '^CONFIG_(MAXIO_PHY|MOTORCOMM_PHY|REALTEK_PHY|AIC8800_WLAN_SUPPORT)' "$CFG" || true
+            for sym in MAXIO_PHY STMMAC_ETH STMMAC_PLATFORM DWMAC_ROCKCHIP; do
+              if grep -qE "^CONFIG_${sym}=m" "$CFG"; then
+                echo "  OK  CONFIG_${sym}=m"
+              else
+                echo "  !!  CONFIG_${sym} 不是 =m —— 内建/未开都会让在线更新后无法恢复网口"; FAIL=1
+              fi
+            done
+            grep -E '^CONFIG_(MAXIO_PHY|MOTORCOMM_PHY|REALTEK_PHY|AIC8800_WLAN_SUPPORT|STMMAC_ETH|STMMAC_PLATFORM|DWMAC_ROCKCHIP)=' "$CFG" || true
+            # 模块本体 + 自愈链必须真的落进 rootfs（配置对了但文件没进镜像 = 等于没有）
+            KO=$(ls /mnt/ir/lib/modules/*/kernel/drivers/net/phy/maxio.ko 2>/dev/null | head -1 || true)
+            [ -n "$KO" ] && echo "  OK  maxio.ko -> $KO" || { echo "  !!  rootfs 里没有 maxio.ko（=m 构建产物缺失）"; FAIL=1; }
+            for f in usr/src/kickpi-k1/maxio.c usr/local/sbin/kickpi-k1-build-maxio \
+                     usr/local/sbin/kickpi-k1-load-modules etc/kernel/postinst.d/zz-kickpi-k1-maxio \
+                     etc/modprobe.d/kickpi-k1.conf; do
+              [ -e "/mnt/ir/$f" ] && echo "  OK  自愈件 $f" || { echo "  !!  缺自愈件 $f（换内核后网口救不回）"; FAIL=1; }
+            done
+            grep -q 'softdep dwmac-rockchip pre: maxio' /mnt/ir/etc/modprobe.d/kickpi-k1.conf 2>/dev/null \
+              && echo "  OK  softdep（maxio 先于 MAC 驱动注册）" \
+              || { echo "  !!  缺 softdep（PHY 会被通用驱动抢绑）"; FAIL=1; }
+            # EEE/LPI 必须全关件到位（实机定案：EEE 开着 = 链路间歇整口掉线）
+            [ -x /mnt/ir/usr/local/sbin/kickpi-k1-eee-off.sh ] && echo "  OK  EEE 关闭脚本" \
+              || { echo "  !!  缺 kickpi-k1-eee-off.sh（EEE 未关 = 间歇掉线会复发）"; FAIL=1; }
+            [ -e /mnt/ir/etc/systemd/system/multi-user.target.wants/kickpi-k1-eee-off.service ] \
+              && echo "  OK  EEE 服务已 enable" || { echo "  !!  EEE 服务未 enable"; FAIL=1; }
           else
             echo "  !!  镜像里找不到内核 config 文件"; FAIL=1
           fi

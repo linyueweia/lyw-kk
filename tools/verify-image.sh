@@ -96,12 +96,23 @@ if [[ -f "$DT" ]]; then
     # 曾经误查后者，导致明明 DTS 生效却报"有 IP 块未使能"。
     for p in /mpp-srv /rkvdec@fdf80200 /rkvenc@fdf40000 /video-codec@fdea0400 \
              /vepu@fdee0000 /rk_rga@fdeb0000 /iep@fdef0000 /jpegd@fded0000 \
-             /rng@fe388000 /npu@fde40000 /iommu@fdf80800 /iommu@fdf40f00; do
+             /rng@fe388000 /iommu@fdf80800 /iommu@fdf40f00; do
         st=$(fdtget -t s "$DT" "$p" status 2>/dev/null || echo MISSING)
         printf "      %-24s %s\n" "$(basename "$p")" "$st"
         [[ "$st" == "okay" ]] || dtfail=1
     done
-    [[ $dtfail -eq 0 ]] && ok "SoC IP 块全部 okay" || bad "有 IP 块未使能（DTS 未生效或遗漏）"
+    # 必须【disabled】的块 —— 与成功线 T68M 一致（其官方 DTS 注释明写 NPU 出厂即 disabled）。
+    # 实机定案（commit 481bedd）：npu=okay 时 rockchip-pm-domain 向 npu 域发 idle 请求
+    # 等不到 ack（failed to get ack on domain 'npu', val=0x1ee）→ vendor 内核
+    # panic_on_set_idle 直接 Kernel panic（实机跑到 15.93s 挂）。软路由/NAS 场景不用 NPU。
+    # 反向断言的意义：将来有人"顺手把 NPU 打开"，这里会立刻拦住，而不是让它上板再炸。
+    for p in /npu@fde40000; do
+        st=$(fdtget -t s "$DT" "$p" status 2>/dev/null || echo MISSING)
+        printf "      %-24s %s（期望 disabled：开了会 panic）\n" "$(basename "$p")" "$st"
+        [[ "$st" == "disabled" ]] || dtfail=1
+    done
+    [[ $dtfail -eq 0 ]] && ok "SoC IP 块状态全部符合预期（该开的都 okay，NPU 按实机定案保持 disabled）" \
+                        || bad "SoC IP 块状态不符（该开未开，或 NPU 被意外打开）"
 
     echo "    ── (2c) 网口 PHY 与实机 RGMII 延迟 ──"
     DTC=$(mktemp)
