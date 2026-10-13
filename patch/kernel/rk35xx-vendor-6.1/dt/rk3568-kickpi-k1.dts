@@ -736,7 +736,12 @@
 };
 
 &pcie30phy {
-	data-lanes = <1 2>;
+	/* 不写 data-lanes（金标准对照定论）：
+	   R1 官方 DTB、飞牛线（同板实机 NVMe 正常）的 phy@fe8c0000 均无此属性；
+	   仅 T68M（1+1 bifurcation 分叉板）才写 <1 2>。K1 是聚合 x2 NVMe，
+	   照抄后实测 rockchip_p3phy_rk3568_init: lock failed 0x6890000
+	   （check input refclk and power supply）→ phy init -110 → dw-pcie -22。
+	   SNPS 驱动源码不读 data-lanes，其影响经 u-boot 初始化路径注入。 */
 	status = "okay";
 };
 
