@@ -84,12 +84,46 @@ K1 的网口 PHY 是 **Maxio MAE0621A**，**不在上游内核里**，必须打�
 深夜几乎不掉；对端 `phy_eee_wakeup_error_n=8126`、LPI 进出 7811 万次；两端 `rx_crc_errors=0`
 （排除线材）、SoC 37°C。`ethtool --set-eee <if> eee off` 后掉线归零。
 
-`extensions/kickpi-k1-net-eee.sh` 按三层持久化修它（缺一层都会复发）：
+`extensions/kickpi-k1-net-eee.sh` 按**五层**持久化修它（缺一层都会复发；2026-10-14 逐层实机复现定案）：
 开机服务 `kickpi-k1-eee-off.service` + **NetworkManager dispatcher**（每次接口 up 重关一次，
-因为 EEE 会随重新协商被打开）+ 脚本遍历**所有**真实网卡（含 USB 网卡）。
+因为 EEE 会随重新协商被打开）+ **ifupdown-ng 钩子** `if-up.d/zz-kickpi-k1-eee-off`
+（本板 roceos 走 ifupdown-ng、根本不经过 NM —— 只挂 dispatcher 时重配网络后 EEE 会回来，
+端口恢复成每 15~20 秒 Up/Down 抖动，实测复现）+ **30 秒周期兜底 timer**
+（`kickpi-k1-eee-off-watch.timer`）+ 脚本遍历**所有**真实网卡（含 USB 网卡）。
 另把 `device/power/control` 钉为 `on`（禁网卡运行时挂起）。与 `lyw-kf` 的
 `assets/kickpi-k1-eee-off.sh`、`lyw-OS` 的 `eth-eee-off` 同案同款。
 
+
+## M.2 NVMe：pcie30 PHY 上电时序坑 + 开机自愈
+
+NVMe 走独立 **pcie30 PHY**（`phy@fe8c0000`）与 `pcie3x2`（`pcie@fe280000`）。实机（串口 + journal 逐秒取证，2026-10-14）：
+
+| 时刻 | 事件 |
+|---|---|
+| t≈13.94s | pcie30 PHY 初始化 → 内部 SRAM 初始化 500µs 超时 → `rockchip_p3phy_rk3568_init: lock failed 0x6890000` |
+| t≈15.07s | `pcie30_avdd0v9` / `pcie30_avdd1v8` 才经 regulator 就绪（**晚约 1.1 秒**） |
+| 之后 | `phy init failed -110` → `dw-pcie: invalid resource` → `rk-pcie -ETIMEDOUT` → `rk_pcie_remove()` 空指针 Oops → `dw-pcie probe failed -22` |
+
+修法（两处，都在本仓）：
+1. **DTS 正本清源**（`patch/kernel/rk35xx-vendor-6.1/dt/rk3568-kickpi-k1.dts`）：
+   · `vcc3v3_pcie` 槽电源加 `gpio = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>` + `enable-active-high` + pinmux；
+   · 补 `pcie30_avdd0v9` / `pcie30_avdd1v8` 两路常开 regulator；
+   · **绝不要给 `&pcie30phy` 挂 `phy-supply`** —— 实测会导致 PHY 永久 deferred probe（比原问题更难救）。
+2. **开机自愈**（`extensions/kickpi-k1-nvme-selfheal.sh`）：开机后若 `/dev/nvme0` 未出现，重绑定
+   `rk-pcie` 最多 5 次。快路径只做一次 `test -e`，冷启动成功时零额外开销（不拖慢开机）。
+
+实机结果：重绑定/自愈后 `15.752 Gb/s PCIe x2`、`nvme0n1 238.5GB` 正常出盘并挂载。
+
+## 网口角色：ETH0 = WAN、eth1 = LAN（用户定义，开机自纠正）
+
+roceos 的"设置向导"按枚举顺序分配角色，本板**两次装机都分反**（eth0 当 LAN、eth1 当 WAN）。
+关键判据：角色真源**不是** `/etc/roceos/factory-env.json`（改了无效），而是 sqlite 库
+`/opt/roceos/data/roceos.db` 的三张表 —— `network_interfaces`（`wan1.device` / `lan1.device`）、
+`interface_bindings`（`physical_nics` / `physical_nic_macs`）、`lan_configs`（`nic_ids`）。
+
+`extensions/kickpi-k1-net-roles.sh` 把它变成**每次开机自纠正**（`Before=roceos.service`，改完
+roceos 读到的就是对的，不需要重启任何服务）：按设备名归位、MAC 取该口**当前真实值**（不写死）、
+IP/掩码/DHCP 等一律不动、库不存在时跳过。实机结果：eth0 从上游拿到 DHCP、eth1 = `192.168.100.1/24`。
 
 ## 树外驱动之二：SWT6621S SDIO WiFi + 蓝牙
 
@@ -97,6 +131,13 @@ K1 的网口 PHY 是 **Maxio MAE0621A**，**不在上游内核里**，必须打�
 实机加载的正是 `swt6621s_wifi` / `skw_sdio_lite` / `skwbt` 三个**树外**模块，
 内核里**没有任何** SWT/SKW 配置项 —— 与 Maxio PHY 同性质，必须自行接入。
 （armbian 框架默认开的 `AIC8800_WLAN_SUPPORT` 对这块板**无用**。）
+
+> **当前结论（2026-10-14，用户已决定不再追这条线）**：DT（厂商原厂 `wireless-wlan` 胶水节点、
+> 电源脚 gpio3 RK_PD5、host-wake gpio3 RK_PD4、`sdio_pwrseq` 与厂商 K1 完全对齐）、
+> 树外驱动、固件、加载规则（softdep/options）**全部与能跑通的飞牛线等价**后，
+> 6.1 vendor 内核下 SDIO 仍不上卡（400kHz 枚举阶段模块不应答）；而飞牛用 6.18 同款硬件可跑。
+> 即**差异在内核**（飞牛 6.18 用标准的 `mmc-pwrseq` + 原生 seekwave 支持，6.1 vendor 树没有）。
+> 因此"移植"实为换 6.18 同源内核，影响面覆盖 maxio/EEE/NVMe 整套，需单独立项评估。
 
 做法：
 - `patch/kernel/rk35xx-vendor-6.1/swt6621s-wifi-bt-driver.patch`

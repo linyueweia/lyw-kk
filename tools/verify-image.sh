@@ -237,6 +237,26 @@ else
         grep -q 'kickpi-k1-modules.service' "$RMNT/etc/systemd/system/multi-user.target.wants/kickpi-k1-modules.service" 2>/dev/null \
             && ok "开机自愈单元已 enable" \
             || bad "kickpi-k1-modules.service 未 enable（重启不加载板级模块）"
+        # EEE 第 4/5 层（2026-10-14 实机复现：只挂 NM dispatcher 时，roceos 走 ifupdown-ng
+        # 重配网络后 EEE 会回来 → 端口每 15~20 秒 Up/Down 抖动）
+        [[ -x "$RMNT/etc/network/if-up.d/zz-kickpi-k1-eee-off" ]] \
+            && ok "ifupdown-ng 钩子在位（roceos 重配网络后重关 EEE）" \
+            || bad "缺 ifupdown-ng 钩子（重配网络后 EEE 复发）"
+        [[ -f "$RMNT/etc/systemd/system/kickpi-k1-eee-off-watch.timer" ]] \
+            && ok "EEE 周期兜底 timer 在位" || bad "缺 kickpi-k1-eee-off-watch.timer"
+        # NVMe 自愈链（实机定案：pcie30 PHY init 早于模拟供电就绪 → 冷启动可能不上盘）
+        [[ -x "$RMNT/usr/local/sbin/kickpi-k1-nvme-selfheal.sh" ]] \
+            && ok "NVMe 自愈脚本在位" || bad "缺 kickpi-k1-nvme-selfheal.sh"
+        grep -q 'rk-pcie/unbind' "$RMNT/usr/local/sbin/kickpi-k1-nvme-selfheal.sh" 2>/dev/null \
+            && ok "NVMe 自愈脚本含 rk-pcie 重绑定" || bad "NVMe 自愈脚本内容不对"
+        [[ -f "$RMNT/etc/systemd/system/kickpi-k1-nvme-selfheal.service" ]] \
+            && ok "NVMe 自愈单元已装" || bad "缺 kickpi-k1-nvme-selfheal.service"
+        # 网口角色归一（用户定义 WAN=eth0 / LAN=eth1）
+        [[ -x "$RMNT/usr/local/sbin/kickpi-k1-net-roles.py" ]] \
+            && ok "网口角色归一脚本在位" || bad "缺 kickpi-k1-net-roles.py"
+        grep -q '/opt/roceos/data/roceos.db' "$RMNT/usr/local/sbin/kickpi-k1-net-roles.py" 2>/dev/null \
+            && ok "角色真源指向 roceos.db（不是 factory-env.json）" \
+            || bad "角色脚本改错地方（factory-env.json 无效）"
         # 反面断言：不许出现"钉死内核"的痕迹（本板设计是更新后自愈，不是禁止更新）
         if grep -rqs 'linux-image-vendor-rk35xx' "$RMNT/etc/apt/preferences.d/" 2>/dev/null; then
             bad "镜像里出现内核 apt pin（与设计相悖：内核不钉死）"

@@ -167,6 +167,13 @@ jobs:
           # EEE/LPI 关闭：实机定案的"网口间歇整口 Down"根因修复（与 lyw-OS/lyw-kf 同案同修）
           grep -q 'kickpi_k1_net_eee' build/userpatches/extensions/kickpi-k1-net-eee.sh \
             || { echo "!! net-eee 扩展缺失（EEE 未关 = 链路间歇掉线会复发）"; exit 1; }
+          # NVMe 自愈：pcie30 PHY 上电时序兜底（实机定案：PHY init t≈13.9s 早于
+          # pcie30_avdd0v9/1v8 就绪 t≈15.1s → lock failed → 冷启动 NVMe 不上盘）
+          grep -q 'kickpi_k1_nvme_selfheal' build/userpatches/extensions/kickpi-k1-nvme-selfheal.sh \
+            || { echo "!! nvme-selfheal 扩展缺失（冷启动 NVMe 不上盘时无人救）"; exit 1; }
+          # 网口角色归一：用户定义 ETH0=WAN / eth1=LAN（roceos 向导会按枚举顺序分反）
+          grep -q 'kickpi_k1_net_roles' build/userpatches/extensions/kickpi-k1-net-roles.sh \
+            || { echo "!! net-roles 扩展缺失（角色会被向导分反，用户拿到的是反的）"; exit 1; }
 
           echo "--- SWT6621S 固件 -> overlay/lib/firmware/"
           mkdir -p build/userpatches/overlay/lib/firmware
@@ -214,7 +221,7 @@ jobs:
             BOARD=kickpi-k1 \
             BRANCH=vendor \
             RELEASE=trixie \
-            ENABLE_EXTENSIONS="istorenext,kickpi-k1-maxio,kickpi-k1-wifi,kickpi-k1-roceos,kickpi-k1-kernel-config,kickpi-k1-module-selfheal,kickpi-k1-net-eee,kickpi-k1-update-guard" \
+            ENABLE_EXTENSIONS="istorenext,kickpi-k1-maxio,kickpi-k1-wifi,kickpi-k1-roceos,kickpi-k1-kernel-config,kickpi-k1-module-selfheal,kickpi-k1-net-eee,kickpi-k1-nvme-selfheal,kickpi-k1-net-roles,kickpi-k1-update-guard" \
             BUILD_MINIMAL=no \
             BUILD_DESKTOP=no \
             KERNEL_CONFIGURE=no \

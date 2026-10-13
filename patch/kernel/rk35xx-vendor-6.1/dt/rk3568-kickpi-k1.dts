@@ -159,13 +159,44 @@
 		vin-supply = <&vcc5v0_usb>;
 	};
 
+	/* NVMe(M.2) 槽 3.3V 供电 —— 实机定案：槽电源受 gpio0 RK_PD4(=pin28) 控制，
+	   厂商 K1 原厂 dtsi 同款；此前写成"无 GPIO 常开"导致 pcie30 PHY 初始化时
+	   槽上无电，PHY SRAM init 等不到 → "rockchip_p3phy_rk3568_init: lock failed"
+	   → dw-pcie -ETIMEDOUT → rk_pcie_remove 空指针 Oops。(v8 实机出盘 238GB) */
 	vcc3v3_pcie: vcc3v3-pcie-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc3v3_pcie";
 		regulator-always-on;
 		regulator-boot-on;
+		gpio = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pcie3_power_en>;
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	/* pcie30 PHY 的模拟供电（0.9V/1.8V）—— 实机日志取证：PHY 初始化(t≈13.9s)早于
+	   这两路 regulator 就绪(t≈15.1s)，故必须常开并由内核保证上电顺序；
+	   另外「绝不要给 &pcie30phy 挂 phy-supply」，实测会永久 deferred probe。 */
+	pcie30_avdd0v9: pcie30-avdd0v9 {
+		compatible = "regulator-fixed";
+		regulator-name = "pcie30_avdd0v9";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <900000>;
+		regulator-max-microvolt = <900000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	pcie30_avdd1v8: pcie30-avdd1v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "pcie30_avdd1v8";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
 		vin-supply = <&vcc3v3_sys>;
 	};
 };
@@ -583,6 +614,13 @@
 	pmic {
 		pmic_int: pmic-int {
 			rockchip,pins = <0 RK_PA3 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	pcie3 {
+		/* NVMe 槽电源使能脚（与厂商 K1 原厂 dtsi 一致） */
+		pcie3_power_en: pcie3-power-en {
+			rockchip,pins = <0 RK_PD4 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 

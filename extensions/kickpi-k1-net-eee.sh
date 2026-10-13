@@ -13,7 +13,7 @@
 #   与其它网口坑互不相同：`lyw-kf/PORTING.md` §3 那五层修的是"丢包/不通"，
 #   本扩展修的是"通了但会间歇掉线"。
 #
-# 本扩展做三件事（三层持久化，缺一层都可能复发）：
+# 本扩展做五件事（五层持久化，缺一层都可能复发；2026-10-14 实机逐层复现定案）：
 #   1) /usr/local/sbin/kickpi-k1-eee-off.sh —— 对【每个真实网卡】执行 `--set-eee eee off`
 #      并把 `/sys/class/net/<if>/device/power/control` 钉为 `on`（禁运行时挂起）；带重试
 #      （PHY/接口可能尚未就绪），不支持 EEE 的口（wifi/虚拟口）自动跳过。
@@ -65,6 +65,8 @@ function post_post_debootstrap_tweaks__kickpi_k1_net_eee() {
 				case "$nic" in
 					lo|docker*|veth*|br-*|virbr*|wg*|tailscale*|tun*|p2p*) continue ;;
 				esac
+				"$ETHTOOL" --set-eee "$nic" tx-lpi off 2>/dev/null || true
+				"$ETHTOOL" --set-eee "$nic" rx-lpi off 2>/dev/null || true
 				if ! "$ETHTOOL" --set-eee "$nic" eee off 2>/dev/null; then
 					# set 失败：该口若根本不支持 EEE（--show-eee 也失败）就不算欠账
 					if "$ETHTOOL" --show-eee "$nic" >/dev/null 2>&1; then
@@ -120,10 +122,47 @@ function post_post_debootstrap_tweaks__kickpi_k1_net_eee() {
 
 	chroot_sdcard systemctl --no-reload enable kickpi-k1-eee-off.service >/dev/null 2>&1 || true
 
+	# ── 4) ifupdown-ng / ifupdown 的 if-up.d 钩子 ─────────────────────────────
+	# 本板实机用 roceos + ifupdown-ng（networking.service），根本不经过 NetworkManager：
+	# 只挂 NM dispatcher 时，重配网络后 EEE 会被重新打开，端口恢复成每 15~20 秒 Up/Down
+	# （2026-10-14 实机复现）—— 两套钩子必须都挂。
+	mkdir -p "${SDCARD}/etc/network/if-up.d"
+	cat <<- 'EOF' > "${SDCARD}/etc/network/if-up.d/zz-kickpi-k1-eee-off"
+		#!/bin/sh
+		# ifupdown-ng / ifupdown：接口每次 up 之后再关一次 EEE（PHY 会在 link-up 时重新使能）
+		[ "${IFACE}" = "lo" ] && exit 0
+		/usr/local/sbin/kickpi-k1-eee-off.sh >/dev/null 2>&1 &
+		exit 0
+	EOF
+	chmod 0755 "${SDCARD}/etc/network/if-up.d/zz-kickpi-k1-eee-off"
+
+	# ── 5) 周期兜底：每 30 秒幂等再关一次 ─────────────────────────────────────
+	cat <<- 'EOF' > "${SDCARD}/etc/systemd/system/kickpi-k1-eee-off-watch.service"
+		[Unit]
+		Description=KICKPI K1 periodic NIC EEE/LPI off re-apply (link stability)
+		[Service]
+		Type=oneshot
+		ExecStart=/usr/local/sbin/kickpi-k1-eee-off.sh
+	EOF
+	cat <<- 'EOF' > "${SDCARD}/etc/systemd/system/kickpi-k1-eee-off-watch.timer"
+		[Unit]
+		Description=KICKPI K1 periodic NIC EEE re-apply timer
+		[Timer]
+		OnBootSec=45s
+		OnUnitActiveSec=30s
+		AccuracySec=5s
+		Unit=kickpi-k1-eee-off-watch.service
+		[Install]
+		WantedBy=timers.target
+	EOF
+
+	chroot_sdcard systemctl --no-reload enable kickpi-k1-eee-off.service >/dev/null 2>&1 || true
+	chroot_sdcard systemctl --no-reload enable kickpi-k1-eee-off-watch.timer >/dev/null 2>&1 || true
+
 	if [[ $fail -ne 0 ]]; then
 		exit_with_error "KICKPI K1 EEE fix incomplete (ethtool unavailable)"
 	fi
-	display_alert "NIC EEE off installed (script + service + NM dispatcher)" "$EXTENSION" "info"
+	display_alert "NIC EEE off installed (script + service + NM dispatcher + ifupdown hook + 30s timer)" "$EXTENSION" "info"
 	return 0
 }
 
@@ -152,6 +191,13 @@ function pre_umount_final_image__kickpi_k1_net_eee() {
 		"${SDCARD}/etc/systemd/system/multi-user.target.wants/kickpi-k1-eee-off.service"
 	[[ -x "${SDCARD}/etc/NetworkManager/dispatcher.d/90-kickpi-k1-eee-off" ]] || {
 		display_alert "NM dispatcher 缺失（接口 up 后不会重新关 EEE）" "$EXTENSION" "err"; fail=1; }
+	[[ -x "${SDCARD}/etc/network/if-up.d/zz-kickpi-k1-eee-off" ]] || {
+		display_alert "ifupdown-ng 钩子缺失（roceos 重配网络后 EEE 会复发）" "$EXTENSION" "err"; fail=1; }
+	[[ -f "${SDCARD}/etc/systemd/system/kickpi-k1-eee-off-watch.timer" ]] || {
+		display_alert "EEE 周期兜底 timer 缺失" "$EXTENSION" "err"; fail=1; }
+	mkdir -p "${SDCARD}/etc/systemd/system/timers.target.wants"
+	ln -sf /etc/systemd/system/kickpi-k1-eee-off-watch.timer \
+		"${SDCARD}/etc/systemd/system/timers.target.wants/kickpi-k1-eee-off-watch.timer"
 
 	local et
 	et="$(ls "${SDCARD}"/usr/sbin/ethtool "${SDCARD}"/usr/bin/ethtool 2>/dev/null | head -1 || true)"
