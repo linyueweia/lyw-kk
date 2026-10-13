@@ -829,6 +829,12 @@
 	status = "okay";
 };
 
+/* 真 VPU（video-codec@fdea0400，硬解/RGA 侧命门）——
+   与同地址占位节点 vdpu@fdea0400 不同，漏了它 CI 后处理校验必挂（实测踩到） */
+&vpu {
+	status = "okay";
+};
+
 &vdpu {
 	status = "okay";
 };
