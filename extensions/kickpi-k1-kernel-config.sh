@@ -24,12 +24,6 @@ function custom_kernel_config__kickpi_k1_storage_irq() {
 	# 目标值（=y：SATA 必须内建；PCI_MSI=y 才能让 MSI 域自动 select 起来）
 	opts_y+=("AHCI_DWC" "PCI_MSI")
 
-	# WiFi 前置：WLAN_VENDOR_SWT6621S 依赖 CFG80211（swt6621s-wifi-bt-driver.patch:16622），
-	# 两份 defconfig（armbian-rk35xx-vendor.config 与框架自带的 linux-rk35xx-vendor.config，
-	# md5 相同）都没有 CFG80211/MAC80211 —— make olddefconfig 会把依赖不满足的
-	# WLAN_VENDOR_SWT6621S 直接丢掉。实机 /proc/config.gz: CFG80211=y、MAC80211=y。
-	opts_y+=("CFG80211" "MAC80211")
-
 	# 板载按键 / 摄像头 / 串口蓝牙：实机 =y，defconfig 是 =m —— 靠 modalias 装载，
 	# 一旦镜像里 modules.dep 没覆盖就静默失效（按键/摄像头无声无息），按实机对齐为 =y。
 	opts_y+=("KEYBOARD_ADC" "KEYBOARD_GPIO" "VIDEO_GC5035" "BT_HCIUART")

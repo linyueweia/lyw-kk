@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ══════════════════════════════════════════════════════════════════════════
-# KICKPI K1 板级扩展：装入 roceos 网页后台 + AIC8800 WiFi 固件
+# KICKPI K1 板级扩展：装入 roceos 网页后台
 #
 # 为什么用扩展 + post_post_debootstrap_tweaks 这个早期钩子：
 #   官方 istorenext 扩展就是在这一阶段用
@@ -9,10 +9,10 @@
 #   用 `ln -sf` 建 multi-user.target.wants 链接，钩子内自检通过、但最终镜像里
 #   链接消失（被后续流程清掉），导致构建自证失败。改用官方同款阶段后链接可留存。
 #
-# 装的东西（与官方 Easepi-r1 镜像逐项一致；K1 版不含 AIC8800 固件 —— 本板用 SWT6621S，
-#   其固件已由本仓库 overlay（firmware/SWT6621S_*）单独投递）：
+# 装的东西（与官方 Easepi-r1 镜像逐项一致，但不含任何 WiFi 固件）：
 #   /opt/roceos、/opt/roceos-ai、roceos{,-ai,-vision}.service（并启用）、
-#   nginx 站点+证书（移除 default 站点）、Flask 栈、AIC8800 SDIO 固件
+#   nginx 站点+证书（移除 default 站点）、Flask 栈
+# （本板 SDIO WiFi = Seekwave SWT6621S：其驱动/固件/DT 支持已于 2026-10-14 从本仓移除，原因见 README。）
 # ══════════════════════════════════════════════════════════════════════════
 
 # 载荷 sha256（与 release roceos-payload-v1 一致；内容一变就报错）

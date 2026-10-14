@@ -13,7 +13,7 @@
 | 内存 / eMMC | 4GB LPDDR4 / 64GB eMMC（可用 58.2G） |
 | 有线网 | **2× 千兆**：gmac0@fe2a0000、gmac1@fe010000 |
 | **PHY** | **Maxio MAE0621A-Q2C**（PHY ID `0x7b744411`）+ Q3C（`0x7b744412`） |
-| 无线 | SDIO WiFi + BT（AIC8800 / SWT6621S 视版本） |
+| 无线 | SDIO WiFi + BT（AIC8800 / SWT6621S 视版本）；**本仓未支持**，见下方说明 |
 | 存储扩展 | M.2 NVMe（PCIe3x2） |
 | PMIC | RK809 + fan53555(vdd_cpu) |
 | 其它 | 控制台 ttyS2/0xfe660000@1500000、gpio-fan、adc-keys、HDMI/VOP、NPU |
@@ -125,30 +125,23 @@ roceos 的"设置向导"按枚举顺序分配角色，本板**两次装机都分
 roceos 读到的就是对的，不需要重启任何服务）：按设备名归位、MAC 取该口**当前真实值**（不写死）、
 IP/掩码/DHCP 等一律不动、库不存在时跳过。实机结果：eth0 从上游拿到 DHCP、eth1 = `192.168.100.1/24`。
 
-## 树外驱动之二：SWT6621S SDIO WiFi + 蓝牙
+## SDIO WiFi（Seekwave SWT6621S）：已移除，本仓不携带
 
-实机 SDIO 器件 `mmc3:0001:1` = vendor `0x1ffe` / device `0x6621`（**Seekwave SWT6621S**），
-实机加载的正是 `swt6621s_wifi` / `skw_sdio_lite` / `skwbt` 三个**树外**模块，
-内核里**没有任何** SWT/SKW 配置项 —— 与 Maxio PHY 同性质，必须自行接入。
-（armbian 框架默认开的 `AIC8800_WLAN_SUPPORT` 对这块板**无用**。）
+**结论（2026-10-14 实测定案）**：本板 SDIO WiFi 能不能跑，决定变量在**内核**，不在 DT / 驱动 / 固件 / 电源脚。
 
-> **当前结论（2026-10-14，用户已决定不再追这条线）**：DT（厂商原厂 `wireless-wlan` 胶水节点、
-> 电源脚 gpio3 RK_PD5、host-wake gpio3 RK_PD4、`sdio_pwrseq` 与厂商 K1 完全对齐）、
-> 树外驱动、固件、加载规则（softdep/options）**全部与能跑通的飞牛线等价**后，
-> 6.1 vendor 内核下 SDIO 仍不上卡（400kHz 枚举阶段模块不应答）；而飞牛用 6.18 同款硬件可跑。
-> 即**差异在内核**（飞牛 6.18 用标准的 `mmc-pwrseq` + 原生 seekwave 支持，6.1 vendor 树没有）。
-> 因此"移植"实为换 6.18 同源内核，影响面覆盖 maxio/EEE/NVMe 整套，需单独立项评估。
+- 飞牛线（**6.18**，同板同卡同芯）：内核在 4.29s 自行枚举出 `mmc2: new UHS-I speed SDR104 SDIO card`，
+  随后 `swt6621s_wifi` 拿到 `vendor=0x1ffe device=0x6621`（`SV6160LITE chip`）—— 搜索卡这一步与 seekwave 驱动无关。
+- 本仓线（**6.1 vendor**）：`mmc3` 在 375kHz 之后对**任何**命令零应答（CMD52/CMD8/CMD5/CMD55/CMD1 全 `-110`）；
+  DT（`sdio-pwrseq` / `wlan-platdata` / `sv6160lite`、PD5 电源脚）、树外驱动、固件、加载规则全部对齐飞牛后**依然不上卡**。
+  同日逐项排除：`vqmmc` 指向 RK809 DCDC5（1.8V 档）导致 `Regulator set error -22` —— **不是**根因（修掉后仍不上卡）；
+  SDIO 引脚 pin config 与飞牛**等价**（本树 `0x11a` = `pcfg-pull-up-drv-level-2`，等同飞牛 `0xbf`）。
+- ⇒ 该功能落地实为「换 6.18 同源内核」（影响 maxio/EEE/NVMe 整套；历史上换核还撞上 256M FAT `/boot` 空间不足），
+  用户已决定不再追这条线。
 
-做法：
-- `patch/kernel/rk35xx-vendor-6.1/swt6621s-wifi-bt-driver.patch`
-  —— 驱动源码取自 `retro98boy/seekwave-swt6621s @ b1b1501`，装入
-  `drivers/net/wireless/seekwave/`，并挂好 `drivers/net/wireless/{Kconfig,Makefile}`；
-  已用 `patch -p1 --dry-run` + 实际应用双重复核（110 个文件，0 失败）。
-- `extensions/kickpi-k1-wifi.sh` —— 用 `custom_kernel_config` 钩子打开
-  `SEEKWAVE_BSP_DRIVERS` / `SKW_SDIOHAL` / `WLAN_VENDOR_SWT6621S` / `SKW_BT`，
-  并自检驱动确实已进入内核树。
-- `firmware/SWT6621S_*`（15 个文件）—— **取自实机 v1.2 原厂系统**，
-  经 `userpatches/overlay/lib/firmware/` 随镜像安装。
+**本仓已相应删除**：`patch/.../swt6621s-wifi-bt-driver.patch`（1.7MB 驱动补丁）、`extensions/kickpi-k1-wifi.sh`、
+`firmware/SWT6621S_*`（15 个固件）、`tools/gen-wifi-patch2.py`；DTS 里的 `sdio_pwrseq` / `wifi_enable_h` /
+`wireless-wlan` / `sv6160lite` 节点已移除（`&sdmmc2` 覆盖改为 `status = "disabled"`）；CI 中的 WiFi 固件/模块检查、
+`SEEKWAVE/CFG80211` 配置断言与 `kickpi-k1-wifi` 扩展启用项已移除。完整取证见技能 `kickpi-k1-seekwave-wifi`。
 
 ## SATA / USB3 / 4G-5G 的落地方式（无需额外补丁）
 
