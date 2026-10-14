@@ -1,0 +1,32 @@
+--- a/drivers/soc/rockchip/pm_domains.c
++++ b/drivers/soc/rockchip/pm_domains.c
+@@ -633,7 +633,13 @@
+ 
+ 	return ret;
+ error:
+-	panic("panic_on_set_idle set ...\n");
++	/*
++	 * KICKPI K1：域空闲请求（idle request） 拿不到 ACK 时，把 panic 降级为 WARN（板级 PMU/PMIC 差异）。
++	 * 原样 panic 会让整机 ~15.9s 直接挂死；降级后 rknpu 等消费者可自行走降级路径。
++	 */
++	WARN_ONCE(1,
++		  "rockchip-pm-domain: failed to set %s on domain '%%s' (ACK timeout, downgraded to WARN)\n",
++		  "idle", genpd->name);
+ 	return ret;
+ }
+ 
+@@ -971,7 +971,13 @@
+ 	return ret;
+ 
+ error:
+-	panic("panic_on_set_domain set ...\n");
++	/*
++	 * KICKPI K1：域上下电请求（set domain） 拿不到 ACK 时，把 panic 降级为 WARN（板级 PMU/PMIC 差异）。
++	 * 原样 panic 会让整机 ~15.9s 直接挂死；降级后 rknpu 等消费者可自行走降级路径。
++	 */
++	WARN_ONCE(1,
++		  "rockchip-pm-domain: failed to set %s on domain '%%s' (ACK timeout, downgraded to WARN)\n",
++		  "power", genpd->name);
+ 	return ret;
+ }
+ 

@@ -10,7 +10,8 @@
  *   · 板级数值  = lyw-kf（飞牛线，本板实机验证）与厂商原厂 DTS 取证，
  *     全部标注来源；与 T68M 的板级差异单独注明。
  * 不再包含：厂商全量 SoC 树 / reserved-memory / fiq-debugger / 厂商私有
- * platdata 节点（bluetooth-platdata、wlan-platdata 等，6.1 内核无驱动）。
+ * platdata 节点：wlan-platdata 必须保留（实机内核 CONFIG_RFKILL_RK=y 内建提供 rfkill-wlan 驱动，
+ * 缺它内核不会给 WiFi 芯片上电（日志无 rfkill_set_wifi_bt_power）；见文件末尾 wireless-wlan 节点。
  */
 
 /dts-v1/;
@@ -626,7 +627,8 @@
 
 	sdio-pwrseq {
 		wifi_enable_h: wifi-enable-h {
-			rockchip,pins = <3 RK_PD5 RK_FUNC_GPIO &pcfg_pull_none>;
+			/* 飞牛金标准：pull-up（pull-none 实测不稳） */
+			rockchip,pins = <3 RK_PD5 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
 
@@ -906,4 +908,31 @@
 
 &vepu_mmu {
 	status = "okay";
+};
+
+/* ══════════════════════════════════════════════════════════════════
+ * WiFi 平台节点（2026-10-14 真机对齐飞牛金标准的定案写法）
+ *  ① wireless-wlan(wlan-platdata)：内核 rfkill-wlan 驱动据此给芯片上电
+ *     （CONFIG_RFKILL_RK=y 内建；rockchip_wifi_power/set_carddetect 符号实机 /proc/kallsyms 可验）
+ *  ② sv6160lite：seekwave 移植驱动的 of_match（CHIP_DEV_NAME="sv6160lite"）；
+ *     该节点存在时驱动才会解析 gpio_chip_en 并拉 CHIP_EN 上电
+ *  ⚠ sdio-pwrseq 的 reset-gpios(PD5 ACTIVE_LOW, 1000ms) 必须保留（同飞牛 DTB）
+ * ══════════════════════════════════════════════════════════════════ */
+/ {
+	wireless-wlan {
+		compatible = "wlan-platdata";
+		rockchip,grf = <&grf>;
+		wifi_chip_type = "rtl8822cs";	/* 厂商遗留串（实机是 Seekwave SWT6621S 0x1ffe:0x6621），该属性只选电源策略 */
+		WIFI,poweren_gpio = <&gpio3 RK_PD5 GPIO_ACTIVE_HIGH>;
+		WIFI,host_wake_irq = <&gpio3 RK_PD4 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+
+	sv6160lite {
+		compatible = "seekwave,sv6160lite";
+		bt_antenna = <1>;
+		dma_type = <0>;
+		gpio_chip_en = <&gpio3 RK_PD5 GPIO_ACTIVE_HIGH>;
+		gpio_host_wake = <&gpio3 RK_PD4 GPIO_ACTIVE_HIGH>;
+	};
 };

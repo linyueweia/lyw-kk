@@ -111,3 +111,33 @@ function custom_kernel_config__kickpi_k1_swt6621s() {
 
 	return 0
 }
+
+# ── 固件双路径 + 模块加载顺序（2026-10-14 对齐飞牛金标准）──────────────
+# 飞牛（能跑）里固件同时存在于 /lib/firmware 与 /lib/firmware/seekwave/：
+#   · 官方内核驱动按 seekwave/ 子目录取；本移植驱动 firmware_dir 默认空=根目录
+#   · 两条都装 → 谁取都能取到（kf 坑⑥）
+# 模块加载顺序（飞牛 /etc/modprobe.d/kickpi-k1.conf 同款）：
+#   swt6621s_wifi 未定义 cfg80211_*/rfkill_* → 不先装 cfg80211+rfkill 就是 err -2
+function post_family_tweaks__kickpi_k1_wifi_firmware_dualpath() {
+	local dst="${SDCARD}/lib/firmware"
+	[[ -d "$dst" ]] || return 0
+	mkdir -p "${dst}/seekwave"
+	local n=0
+	for f in "${dst}"/SWT6621S_*; do
+		[[ -e "$f" ]] || continue
+		cp -f "$f" "${dst}/seekwave/" && n=$((n+1))
+	done
+	display_alert "$BOARD" "Seekwave 固件双路径：根目录 + seekwave/（各 ${n} 个）" "info"
+	[[ $n -ge 15 ]] || exit_with_error "SWT6621S 固件双路径拷贝不足（${n} < 15）"
+
+	local md="${SDCARD}/etc/modprobe.d/kickpi-k1.conf"
+	mkdir -p "$(dirname "$md")"
+	cat > "$md" <<-'EOF'
+		# KICKPI K1 (Seekwave SWT6621S)：加载顺序 + 固件目录（对齐飞牛金标准）
+		softdep swt6621s_wifi pre: cfg80211 rfkill
+		softdep skwbt pre: bluetooth rfkill
+		options skw_sdio_lite firmware_dir=seekwave
+		options swt6621s_wifi firmware_dir=seekwave
+	EOF
+	display_alert "$BOARD" "已安装 /etc/modprobe.d/kickpi-k1.conf（softdep + firmware_dir）" "info"
+}

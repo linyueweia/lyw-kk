@@ -106,6 +106,11 @@ if [[ -f "$DT" ]]; then
     # 等不到 ack（failed to get ack on domain 'npu', val=0x1ee）→ vendor 内核
     # panic_on_set_idle 直接 Kernel panic（实机跑到 15.93s 挂）。软路由/NAS 场景不用 NPU。
     # 反向断言的意义：将来有人"顺手把 NPU 打开"，这里会立刻拦住，而不是让它上板再炸。
+    # 2026-10-14 起镜像内已带 \`rockchip-pm-domain-ack-warn.patch\`（把 pm_domains.c 的
+    # `panic("panic_on_set_idle/set_domain")` 降级为 WARN_ONCE）：要真正打开 NPU，需
+    #   ① 确认该补丁在新内核构建里生效（CI 日志能看到 patch 应用行）；
+    #   ② 把本处期望值由 disabled 改为 okay；
+    #   ③ 真机（串口在手）验证不再 panic 后再合并 —— 顺序不能颠倒。
     for p in /npu@fde40000; do
         st=$(fdtget -t s "$DT" "$p" status 2>/dev/null || echo MISSING)
         printf "      %-24s %s（期望 disabled：开了会 panic）\n" "$(basename "$p")" "$st"

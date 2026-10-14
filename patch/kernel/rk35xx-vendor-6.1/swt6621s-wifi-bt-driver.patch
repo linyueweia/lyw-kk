@@ -7852,7 +7852,9 @@
 +//#define SKW_SUPPORT_MMC_NONREMOVABLE //support the host mmc card is not removable but sdcard is removable default
 +//#define CONFIG_SKW_HOST_PLATFORM_AMLOGIC 1 /*supprot the aml  power on api*/
 +//#define CONFIG_SKW_HOST_PLATFORM_FULLHAN /*support the fullhan power on api*/
-+//#define CONFIG_SKW_HOST_PLATFORM_ROCKCHIP
++#define CONFIG_SKW_HOST_PLATFORM_ROCKCHIP 1 /* KICKPI K1：走 Rockchip 平台钩子——skw_sdio_mmc_scan() 里调用
++                                            * rockchip_wifi_power(1)+rockchip_wifi_set_carddetect(1)（内核 CONFIG_RFKILL_RK=y，
++                                            * 符号在 /proc/kallsyms）；不定义则落进 #else 空分支，芯片永不上电、SDIO 永不出卡。 */
 +#ifdef CONFIG_SKW_NO_CONFIG
 +#define  MODEM_ENABLE_GPIO   	125
 +#define  HOST_WAKEUP_GPIO_IN 	-1
