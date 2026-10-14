@@ -113,6 +113,13 @@ jobs:
             echo "    OK  $k"
           done
 
+          # 自检：补丁 hunk 行数一致性（2026-10-14 编译失败事故的防线）
+          # 声明行数 < 实际行数时 GNU patch 不报错、直接丢掉文件末尾几行 —— 当时
+          # boot_config.h 的末 2 行（含 #endif）被丢，编译以几百条 "unterminated #ifndef"
+          # 假错误炸掉，白跑一整车。这里在构建早期把这类截断拦死。
+          python3 k1/tools/patch-hunk-lint.py k1/patch/kernel/rk35xx-vendor-6.1 \
+            || { echo "!! 补丁 hunk 行数不一致（文件末尾会被静默截断）"; exit 1; }
+
           # DDR 初始化固件 —— 必须换成【真机 eMMC 原厂同款】，不能用框架默认。
           # 证据链（四方，2026-10-12 定案）：
           #   1) K1 eMMC 原厂 idbloader 的 DDR = ddr-v1.23-03ea844c5d（本机实测提取，
