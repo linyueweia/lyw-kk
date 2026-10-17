@@ -110,6 +110,12 @@ jobs:
           python3 k1/tools/patch-hunk-lint.py k1/patch/kernel/rk35xx-vendor-6.1 \
             || { echo "!! 补丁 hunk 行数不一致（文件末尾会被静默截断）"; exit 1; }
 
+          # 自检：verify-image.sh 里不得有自相矛盾断言（同一路径既"必须存在"又"必须不存在"）
+          # 2026-10-17 run #49 事故：删 EEE 关闭扩展时只加了反向断言、漏删两条正向断言，
+          # 结果镜像**已经编好**，才在 step 10 里同时打印"✓ 无 …"与"✗ 缺 …"判失败 —— 整车白跑。
+          python3 k1/tools/verify-assert-lint.py k1/tools/verify-image.sh \
+            || { echo "!! verify-image.sh 存在自相矛盾断言（构建会成功、自检必红）"; exit 1; }
+
           # DDR 初始化固件 —— 必须换成【真机 eMMC 原厂同款】，不能用框架默认。
           # 证据链（四方，2026-10-12 定案）：
           #   1) K1 eMMC 原厂 idbloader 的 DDR = ddr-v1.23-03ea844c5d（本机实测提取，

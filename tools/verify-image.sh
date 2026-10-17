@@ -238,13 +238,11 @@ else
         [[ -L "$RMNT/etc/systemd/system/multi-user.target.wants/kickpi-k1-modules.service" ]] 2>/dev/null \
             && ok "开机自愈单元已 enable" \
             || bad "kickpi-k1-modules.service 未 enable（重启不加载板级模块）"
-        # EEE 第 4/5 层（2026-10-14 实机复现：只挂 NM dispatcher 时，roceos 走 ifupdown-ng
-        # 重配网络后 EEE 会回来 → 端口每 15~20 秒 Up/Down 抖动）
-        [[ -x "$RMNT/etc/network/if-up.d/zz-kickpi-k1-eee-off" ]] \
-            && ok "ifupdown-ng 钩子在位（roceos 重配网络后重关 EEE）" \
-            || bad "缺 ifupdown-ng 钩子（重配网络后 EEE 复发）"
-        [[ -f "$RMNT/etc/systemd/system/kickpi-k1-eee-off-watch.timer" ]] \
-            && ok "EEE 周期兜底 timer 在位" || bad "缺 kickpi-k1-eee-off-watch.timer"
+        # 2026-10-17 改判后这里**只允许反向断言**：历史上（a89ce33 删 EEE 扩展时）遗留了两条正向断言
+        # （要求 ifupdown-ng 钩子与 eee-off-watch.timer 存在），与上面 for 循环的"无 X"直接自相矛盾，
+        # 结果整发镜像编好后在这里红掉（lyw-kk run #49）。谁再想加正向断言，先看 tools/verify-assert-lint.py。
+        [[ -L "$RMNT/etc/systemd/system/timers.target.wants/kickpi-k1-eee-off-watch.timer" ]] \
+            && bad "EEE 周期 timer 仍被 enable（与官方默认不一致）" || ok "EEE 周期 timer 未 enable"
         # NVMe 自愈链（实机定案：pcie30 PHY init 早于模拟供电就绪 → 冷启动可能不上盘）
         [[ -x "$RMNT/usr/local/sbin/kickpi-k1-nvme-selfheal.sh" ]] \
             && ok "NVMe 自愈脚本在位" || bad "缺 kickpi-k1-nvme-selfheal.sh"
