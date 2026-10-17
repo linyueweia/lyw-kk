@@ -78,86 +78,19 @@ K1 的网口 PHY 是 **Maxio MAE0621A**，**不在上游内核里**，必须打�
 `snps,reset-gpio` 并解析 phandle 到控制器，两个口都断言到实机定案值）。
 
 
-### 网口 EEE：按 inextos 官方默认保持开启（2026-10-17 改判）
+### 网口 EEE：1G 在内核层关闭（`eee-broken-1000t`，2026-10-17 实机定案）
 
-2026-10-13 曾按"网口间歇整口 Down + 对端 `phy_eee_wakeup_error_n=8126`"判为 EEE/LPI 唤醒时序问题，
-并加了五层关闭（扩展 `kickpi-k1-net-eee.sh` 曾经就是干这个的）。**2026-10-17 在 T68M 主路由上按日志复核推翻**：
-EEP 本身处于关闭态时掉线照样发生；141 次 Link Down 每次都伴随对端 1–5 s 内重新 DHCP（对端在重启），
-20 s 的空档也不符合本端自协商时长。
+2026-10-13 曾用五层用户态件关 EEE；2026-10-17 上午先按"官方默认保持开启"撤掉，结果**当天就把自己打掉线了**：
 
-⇒ 本仓**不再关 EEE**：与官方默认一致（DT 不写 `eee-broken-*`、镜像不装任何关闭件），CI 反向断言镜像里
-不得出现 `kickpi-k1-eee-off.sh` / 服务 / dispatcher / if-up 钩子 / timer。若将来真在 K1 上抓到
-`phy_eee_wakeup_error_n` 增长且伴随掉线，再按"DT 层关 1000T EEE"（`eee-broken-1000t`）这条唯一有内核依据的路处理。
-## M.2 NVMe：pcie30 PHY 上电时序坑 + 开机自愈
+- 现象：K1（fnOS，Maxio MAE0621A）与 T68M 主路由（RTL8211F）协商到 EEE 后，**灯亮、能发不能收** ——
+  板上 ARP/DHCP 一直往外发，却收不到任何回应，ping 100% 丢包；链路 `carrier` 始终为 1，`carrier_changes` 不涨。
+- 计数器（K1 侧 `ethtool -S end1`）：`irq_rx_path_in_lpi_mode_n = 14,222,411`（RX 侧在 LPI 里疯狂进出）、
+  `phy_eee_wakeup_error_n = 241`；对端 T68M 的 `eth1` 同一时段也在涨。
+- 对端 `ethtool --set-eee eth1 eee off` + 重协商 → **立刻恢复 0% 丢包、RTT 0.6ms**；K1 侧再关一次，双端都干净。
 
-NVMe 走独立 **pcie30 PHY**（`phy@fe8c0000`）与 `pcie3x2`（`pcie@fe280000`）。实机（串口 + journal 逐秒取证，2026-10-14）：
-
-| 时刻 | 事件 |
-|---|---|
-| t≈13.94s | pcie30 PHY 初始化 → 内部 SRAM 初始化 500µs 超时 → `rockchip_p3phy_rk3568_init: lock failed 0x6890000` |
-| t≈15.07s | `pcie30_avdd0v9` / `pcie30_avdd1v8` 才经 regulator 就绪（**晚约 1.1 秒**） |
-| 之后 | `phy init failed -110` → `dw-pcie: invalid resource` → `rk-pcie -ETIMEDOUT` → `rk_pcie_remove()` 空指针 Oops → `dw-pcie probe failed -22` |
-
-修法（两处，都在本仓）：
-1. **DTS 正本清源**（`patch/kernel/rk35xx-vendor-6.1/dt/rk3568-kickpi-k1.dts`）：
-   · `vcc3v3_pcie` 槽电源加 `gpio = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>` + `enable-active-high` + pinmux；
-   · 补 `pcie30_avdd0v9` / `pcie30_avdd1v8` 两路常开 regulator；
-   · **绝不要给 `&pcie30phy` 挂 `phy-supply`** —— 实测会导致 PHY 永久 deferred probe（比原问题更难救）。
-2. **开机自愈**（`extensions/kickpi-k1-nvme-selfheal.sh`）：开机后若 `/dev/nvme0` 未出现，重绑定
-   `rk-pcie` 最多 5 次。快路径只做一次 `test -e`，冷启动成功时零额外开销（不拖慢开机）。
-
-实机结果：重绑定/自愈后 `15.752 Gb/s PCIe x2`、`nvme0n1 238.5GB` 正常出盘并挂载。
-
-## 网口角色：ETH0 = WAN、eth1 = LAN（用户定义，开机自纠正）
-
-roceos 的"设置向导"按枚举顺序分配角色，本板**两次装机都分反**（eth0 当 LAN、eth1 当 WAN）。
-关键判据：角色真源**不是** `/etc/roceos/factory-env.json`（改了无效），而是 sqlite 库
-`/opt/roceos/data/roceos.db` 的三张表 —— `network_interfaces`（`wan1.device` / `lan1.device`）、
-`interface_bindings`（`physical_nics` / `physical_nic_macs`）、`lan_configs`（`nic_ids`）。
-
-`extensions/kickpi-k1-net-roles.sh` 把它变成**每次开机自纠正**（`Before=roceos.service`，改完
-roceos 读到的就是对的，不需要重启任何服务）：按设备名归位、MAC 取该口**当前真实值**（不写死）、
-IP/掩码/DHCP 等一律不动、库不存在时跳过。实机结果：eth0 从上游拿到 DHCP、eth1 = `192.168.100.1/24`。
-
-## SDIO WiFi（Seekwave SWT6621S）：已移除，本仓不携带
-
-**结论（2026-10-14 实测定案）**：本板 SDIO WiFi 能不能跑，决定变量在**内核**，不在 DT / 驱动 / 固件 / 电源脚。
-
-- 飞牛线（**6.18**，同板同卡同芯）：内核在 4.29s 自行枚举出 `mmc2: new UHS-I speed SDR104 SDIO card`，
-  随后 `swt6621s_wifi` 拿到 `vendor=0x1ffe device=0x6621`（`SV6160LITE chip`）—— 搜索卡这一步与 seekwave 驱动无关。
-- 本仓线（**6.1 vendor**）：`mmc3` 在 375kHz 之后对**任何**命令零应答（CMD52/CMD8/CMD5/CMD55/CMD1 全 `-110`）；
-  DT（`sdio-pwrseq` / `wlan-platdata` / `sv6160lite`、PD5 电源脚）、树外驱动、固件、加载规则全部对齐飞牛后**依然不上卡**。
-  同日逐项排除：`vqmmc` 指向 RK809 DCDC5（1.8V 档）导致 `Regulator set error -22` —— **不是**根因（修掉后仍不上卡）；
-  SDIO 引脚 pin config 与飞牛**等价**（本树 `0x11a` = `pcfg-pull-up-drv-level-2`，等同飞牛 `0xbf`）。
-- ⇒ 该功能落地实为「换 6.18 同源内核」（影响 maxio/EEE/NVMe 整套；历史上换核还撞上 256M FAT `/boot` 空间不足），
-  用户已决定不再追这条线。
-
-**本仓已相应删除**：`patch/.../swt6621s-wifi-bt-driver.patch`（1.7MB 驱动补丁）、`extensions/kickpi-k1-wifi.sh`、
-`firmware/SWT6621S_*`（15 个固件）、`tools/gen-wifi-patch2.py`；DTS 里的 `sdio_pwrseq` / `wifi_enable_h` /
-`wireless-wlan` / `sv6160lite` 节点已移除（`&sdmmc2` 覆盖改为 `status = "disabled"`）；CI 中的 WiFi 固件/模块检查、
-`SEEKWAVE/CFG80211` 配置断言与 `kickpi-k1-wifi` 扩展启用项已移除。完整取证见技能 `kickpi-k1-seekwave-wifi`。
-
-## SATA / USB3 / 4G-5G 的落地方式（无需额外补丁）
-
-| 项目 | 依据 |
-|---|---|
-| **SATA** | 实机 `ata1` 控制器在线；框架内核已含 `SATA_AHCI_PLATFORM=y` + `AHCI_DWC=m`；DTS 里 3 个 sata 节点已转写。**仅作数据口**，不参与启动（系统从 SD/eMMC 起） |
-| **USB3** | `USB_DWC3=y` + `PHY_ROCKCHIP_INNO_USB3=y` + `NANENG_COMBO_PHY=y` 均在位；DTS 的 `&usbdrd30`/`&usbhost30` 含 dwc3 子节点（`phy-names = "usb2-phy\0usb3-phy"`） |
-| **4G/5G** | 框架内核已含 `USB_SERIAL_OPTION=m` `USB_SERIAL_QUALCOMM=m` `USB_NET_QMI_WWAN=m` `USB_NET_CDC_MBIM=m` `USB_ACM=y`；DTS 已含 4 个 USB2 口与 `vcc5v0_host`(PE6)/`vcc5v0_otg`(PE5) 供电（实机当前未插模块） |
-
-## 仓库结构
-
-```
-config/boards/kickpi-k1.csc                                      板级配置
-patch/kernel/rk35xx-vendor-6.1/dt/rk3568-kickpi-k1.dts            板级设备树
-patch/kernel/rk35xx-vendor-6.1/general-drv-net-phy-maxio-*.patch  Maxio PHY 驱动
-extensions/kickpi-k1-maxio.sh                                     打开 CONFIG_MAXIO_PHY
-.github/workflows/build.yml                                       CI（含构建期自证）
-```
-
-
-## 本机实测的启动链 / 分区 / DDR（全部来自对这块板子的直接取证）
-
+⇒ 决定性做法：**在 DT 的 PHY 节点写 `eee-broken-1000t`**（内核 `of_set_phy_eee_broken()` 会在每次自协商
+清掉 1000T 的 EEE 通告位），只关 1G EEE、100M 保持默认，**不需要任何用户态脚本**；
+CI 里对本仓 DTS 做硬断言（两个 PHY 节点都必须有、`phy-mode=rgmii` 且延迟值精确）。
 ### 厂商分区布局（GPT，Rockchip Android 式，非常规 Linux 布局）
 
 ```

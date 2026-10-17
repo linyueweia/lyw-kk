@@ -167,6 +167,19 @@ jobs:
           grep -q 'kickpi_k1_net_roles' build/userpatches/extensions/kickpi-k1-net-roles.sh \
             || { echo "!! net-roles 扩展缺失（角色会被向导分反，用户拿到的是反的）"; exit 1; }
 
+          # 网口 DTS 门禁（2026-10-17）：phy-mode 必须 rgmii（rgmii-id 在 rk3568 dwmac 上会把 MAC
+          # 延迟清零 → 56B 丢 65%）+ 精确延迟值；PHY 节点必须写 eee-broken-1000t（EEE 1G 在 Maxio
+          # MAE0621A 上会让 RX 侧 LPI 疯狂进出、能发不能收 —— 实机 1400 万次 LPI、整口失联）。
+          DTS=build/patch/kernel/rk35xx-vendor-6.1/dt/rk3568-kickpi-k1.dts
+          grep -q 'phy-mode = "rgmii"' "$DTS" || { echo "!! DTS phy-mode 不是 rgmii"; exit 1; }
+          grep -q 'tx_delay = <0x21>' "$DTS" && grep -q 'rx_delay = <0x3c>' "$DTS" \
+            || { echo "!! DTS 缺 gmac0 延迟 0x21/0x3c"; exit 1; }
+          grep -q 'tx_delay = <0x2f>' "$DTS" && grep -q 'rx_delay = <0x39>' "$DTS" \
+            || { echo "!! DTS 缺 gmac1 延迟 0x2f/0x39"; exit 1; }
+          [ "$(grep -c 'eee-broken-1000t' "$DTS")" -ge 2 ] \
+            || { echo "!! PHY 节点缺 eee-broken-1000t（EEE 1G 会把 Maxio PHY 的 RX 打死）"; exit 1; }
+          echo "    OK  DTS: rgmii + 延迟 + eee-broken-1000t"
+
       - name: Fetch roceos web-UI payload into userpatches/overlay
         # 官方 iNextOS 镜像自带 roceos 网页后台（/opt/roceos + /opt/roceos-ai + 3 个
         # systemd 服务 + nginx 站点与证书 + Flask 栈）—— 没有它，板子能启动但网页后台是空的。
