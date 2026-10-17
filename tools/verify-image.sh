@@ -125,12 +125,21 @@ if [[ -f "$DT" ]]; then
         for pat in "tx_delay = <0x21>" "rx_delay = <0x3c>" "tx_delay = <0x2f>" "rx_delay = <0x39>"; do
             grep -q "$pat" "$DTC" && ok "实机值 $pat" || bad "缺实机值 $pat"
         done
+        # EEE 1000T（2026-10-17 实机定案）：两个 PHY 节点都要带 eee-broken-1000t。
+        # 缺了它，本板 Maxio MAE0621A 与对端协商到 1G EEE 后 RX 侧 LPI 疯狂进出
+        # （实测 rx_lpi 1400 万次 / wake_err 数百）→ 灯亮能发不能收，整口失联。
+        # 必须断言【编译产物】（dtc 反解出的 dts），不能只断言仓库 DTS 源码：
+        # 源码有、打进内核树的 DTB 没有（补丁没应用/改错文件）时，源码断言照样绿。
+        neee="$(grep -c 'eee-broken-1000t' "$DTC" 2>/dev/null || true)"
+        [[ "${neee:-0}" -ge 2 ]] \
+            && ok "DTB 里 eee-broken-1000t 命中 $neee 处（两个 PHY 都只关 1G EEE）" \
+            || bad "DTB 里 eee-broken-1000t 只命中 ${neee:-0} 处（应为 2：1G EEE 会把 Maxio 的 RX 打死）"
         # PHY 说明：本板 PHY 是 Maxio MAE0621A，但 DT 里【不会】出现 "maxio" 字样 ——
         # 实测实机 DT 两处 PHY 均为 compatible = "ethernet-phy-ieee802.3-c22"（通用 C22），
         # Maxio 驱动是按运行时读到的 PHY ID 匹配的。所以这里该查两件事：
         #   (a) 两个 PHY 节点确实存在（C22）
         #   (b) 内核配置里板级网络驱动是【模块 =m】（双千兆命门，且是在线更新自愈的前提）
-        nphy=$(grep -c 'ethernet-phy-ieee802.3-c22' "$DTC" 2>/dev/null || echo 0)
+        nphy="$(grep -c 'ethernet-phy-ieee802.3-c22' "$DTC" 2>/dev/null || true)"
         [[ "${nphy:-0}" -ge 2 ]] && ok "DT 里 PHY 节点 $nphy 个（通用 C22，实机即如此）" \
                                  || bad "DT 里 PHY 节点不足（找到 ${nphy:-0} 个，本板应为 2）"
         # PHY 复位脚门禁（2026-10-14 实机定案）：第二口曾因这一行写错控制器/引脚而整口不可用 ——
