@@ -159,9 +159,6 @@ jobs:
             || { echo "!! module-selfheal 扩展缺失（换内核后网口无法自愈）"; exit 1; }
           grep -q 'kickpi_k1_update_guard' build/userpatches/extensions/kickpi-k1-update-guard.sh \
             || { echo "!! update-guard 扩展缺失（更新后体检/回滚兜底缺失）"; exit 1; }
-          # EEE/LPI 关闭：实机定案的"网口间歇整口 Down"根因修复（与 lyw-OS/lyw-kf 同案同修）
-          grep -q 'kickpi_k1_net_eee' build/userpatches/extensions/kickpi-k1-net-eee.sh \
-            || { echo "!! net-eee 扩展缺失（EEE 未关 = 链路间歇掉线会复发）"; exit 1; }
           # NVMe 自愈：pcie30 PHY 上电时序兜底（实机定案：PHY init t≈13.9s 早于
           # pcie30_avdd0v9/1v8 就绪 t≈15.1s → lock failed → 冷启动 NVMe 不上盘）
           grep -q 'kickpi_k1_nvme_selfheal' build/userpatches/extensions/kickpi-k1-nvme-selfheal.sh \
@@ -208,7 +205,7 @@ jobs:
             BOARD=kickpi-k1 \
             BRANCH=vendor \
             RELEASE=trixie \
-            ENABLE_EXTENSIONS="istorenext,kickpi-k1-maxio,kickpi-k1-roceos,kickpi-k1-kernel-config,kickpi-k1-module-selfheal,kickpi-k1-net-eee,kickpi-k1-nvme-selfheal,kickpi-k1-net-roles,kickpi-k1-update-guard" \
+            ENABLE_EXTENSIONS="istorenext,kickpi-k1-maxio,kickpi-k1-roceos,kickpi-k1-kernel-config,kickpi-k1-module-selfheal,kickpi-k1-nvme-selfheal,kickpi-k1-net-roles,kickpi-k1-update-guard" \
             BUILD_MINIMAL=no \
             BUILD_DESKTOP=no \
             KERNEL_CONFIGURE=no \
@@ -272,13 +269,6 @@ jobs:
             grep -q 'softdep dwmac-rockchip pre: maxio' /mnt/ir/etc/modprobe.d/kickpi-k1.conf 2>/dev/null \
               && echo "  OK  softdep（maxio 先于 MAC 驱动注册）" \
               || { echo "  !!  缺 softdep（PHY 会被通用驱动抢绑）"; FAIL=1; }
-            # EEE/LPI 必须全关件到位（实机定案：EEE 开着 = 链路间歇整口掉线）
-            [ -x /mnt/ir/usr/local/sbin/kickpi-k1-eee-off.sh ] && echo "  OK  EEE 关闭脚本" \
-              || { echo "  !!  缺 kickpi-k1-eee-off.sh（EEE 未关 = 间歇掉线会复发）"; FAIL=1; }
-            # 用 -L：-e 会跟随链接，而 .wants 链接目标是绝对路径 /etc/...，在 runner 上恒判悬空（误报）
-            { [ -L /mnt/ir/etc/systemd/system/multi-user.target.wants/kickpi-k1-eee-off.service ] \
-              || [ -e /mnt/ir/etc/systemd/system/multi-user.target.wants/kickpi-k1-eee-off.service ]; } \
-              && echo "  OK  EEE 服务已 enable" || { echo "  !!  EEE 服务未 enable"; FAIL=1; }
           else
             echo "  !!  镜像里找不到内核 config 文件"; FAIL=1
           fi

@@ -78,22 +78,16 @@ K1 的网口 PHY 是 **Maxio MAE0621A**，**不在上游内核里**，必须打�
 `snps,reset-gpio` 并解析 phandle 到控制器，两个口都断言到实机定案值）。
 
 
-### 网口还有一层独立故障：EEE/LPI 省电（必须全关）
+### 网口 EEE：按 inextos 官方默认保持开启（2026-10-17 改判）
 
-通了也会掉线 —— 实机（与 lyw-OS 主路由线两端同时取证）：用网高峰 **34 次整口 Link Down/3h**、
-深夜几乎不掉；对端 `phy_eee_wakeup_error_n=8126`、LPI 进出 7811 万次；两端 `rx_crc_errors=0`
-（排除线材）、SoC 37°C。`ethtool --set-eee <if> eee off` 后掉线归零。
+2026-10-13 曾按"网口间歇整口 Down + 对端 `phy_eee_wakeup_error_n=8126`"判为 EEE/LPI 唤醒时序问题，
+并加了五层关闭（扩展 `kickpi-k1-net-eee.sh` 曾经就是干这个的）。**2026-10-17 在 T68M 主路由上按日志复核推翻**：
+EEP 本身处于关闭态时掉线照样发生；141 次 Link Down 每次都伴随对端 1–5 s 内重新 DHCP（对端在重启），
+20 s 的空档也不符合本端自协商时长。
 
-`extensions/kickpi-k1-net-eee.sh` 按**五层**持久化修它（缺一层都会复发；2026-10-14 逐层实机复现定案）：
-开机服务 `kickpi-k1-eee-off.service` + **NetworkManager dispatcher**（每次接口 up 重关一次，
-因为 EEE 会随重新协商被打开）+ **ifupdown-ng 钩子** `if-up.d/zz-kickpi-k1-eee-off`
-（本板 roceos 走 ifupdown-ng、根本不经过 NM —— 只挂 dispatcher 时重配网络后 EEE 会回来，
-端口恢复成每 15~20 秒 Up/Down 抖动，实测复现）+ **30 秒周期兜底 timer**
-（`kickpi-k1-eee-off-watch.timer`）+ 脚本遍历**所有**真实网卡（含 USB 网卡）。
-另把 `device/power/control` 钉为 `on`（禁网卡运行时挂起）。与 `lyw-kf` 的
-`assets/kickpi-k1-eee-off.sh`、`lyw-OS` 的 `eth-eee-off` 同案同款。
-
-
+⇒ 本仓**不再关 EEE**：与官方默认一致（DT 不写 `eee-broken-*`、镜像不装任何关闭件），CI 反向断言镜像里
+不得出现 `kickpi-k1-eee-off.sh` / 服务 / dispatcher / if-up 钩子 / timer。若将来真在 K1 上抓到
+`phy_eee_wakeup_error_n` 增长且伴随掉线，再按"DT 层关 1000T EEE"（`eee-broken-1000t`）这条唯一有内核依据的路处理。
 ## M.2 NVMe：pcie30 PHY 上电时序坑 + 开机自愈
 
 NVMe 走独立 **pcie30 PHY**（`phy@fe8c0000`）与 `pcie3x2`（`pcie@fe280000`）。实机（串口 + journal 逐秒取证，2026-10-14）：

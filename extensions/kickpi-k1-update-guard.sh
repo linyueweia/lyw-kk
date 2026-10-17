@@ -217,9 +217,9 @@ function post_post_debootstrap_tweaks__kickpi_k1_update_guard() {
 				pm=$(cat "$d/device/power/control" 2>/dev/null || echo '-')
 				printf '  %-6s EEE=%-16s power/control=%s\n' "$n" "${st:-不支持或不可查}" "$pm"
 			done
-			echo "  · 期望：EEE=disabled / power/control=on（修复件 kickpi-k1-eee-off.service + NM dispatcher）"
+			echo "  · 期望：EEE 保持驱动/DT 默认（不再强制关闭）；power/control=on（PCIe 省电）"
 		else
-			echo "  ✗ 镜像里没有 ethtool —— EEE 状态无法核对（修复件也失效）"
+			echo "  ✗ 镜像里没有 ethtool —— EEE 状态无法核对（官方基线自带 ethtool）"
 		fi
 		echo
 		echo "===== 自愈链条（在线更新后靠它把网口拉回来）====="
@@ -263,8 +263,8 @@ function post_post_debootstrap_tweaks__kickpi_k1_update_guard() {
 		  1) `modinfo maxio` 有输出，且 `lsmod` 里 maxio 在；
 		  2) 两个 `eth*` 的 `driver=dwmac_rockchip`，插线的那个 `carrier=1`；
 		  3) `/var/log/kickpi-k1-modules.log` 里出现 `phy_id=0x7b744411` 与 `Link is Up`；
-		  4) `ethtool --show-eee ethX` 全是 disabled、`power/control` 全是 on
-		     （EEE 开着 = 链路会间歇整口掉线，实机 34 次/3h；修复件 kickpi-k1-eee-off.service）。
+		  4) `power/control` 全是 on（PCIe 省电态）；EEE 不再要求关闭 —— 2026-10-17 复核后按官方默认保持
+		     开启（当初"EEE 开着 = 掉线"的判据已被推翻：EEE 本就关闭时掉线仍发生，且每次都对应对端重启）。
 
 		## 出问题看哪里
 		- `/boot/k1-update-check.log`、`/var/log/k1-update-check.log`：内核一变就自动体检的结果（卡拔到 PC 上也能看）。
