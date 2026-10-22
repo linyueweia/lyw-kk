@@ -134,6 +134,20 @@ if [[ -f "$DT" ]]; then
         [[ "${neee:-0}" -ge 2 ]] \
             && ok "DTB 里 eee-broken-1000t 命中 $neee 处（两个 PHY 都只关 1G EEE）" \
             || bad "DTB 里 eee-broken-1000t 只命中 ${neee:-0} 处（应为 2：1G EEE 会把 Maxio 的 RX 打死）"
+        # 关机断电（2026-10-22 实机对照定案）：vendor 6.1 的 rk808.c 只认
+        #   of_property_read_bool(np, "rockchip,system-power-controller")
+        # 主线写法 "system-power-controller;"（immortalwrt 风格板级 DTS）在 vendor 树里不被识别
+        # → 关机句柄不注册 → poweroff 退化成 halt：整板不断电，风扇照转、网口灯亮。
+        # 同一块 T68M 实测对照：iStoreOS(6.12 主线) 关机风扇停；本镜像(6.1 vendor) 关机风扇不停。
+        # 断言必须锚行首 —— "system-power-controller" 是长名的子串，裸 grep 会假绿。
+        if grep -Eq '^[[:space:]]*rockchip,system-power-controller;' "$DTC"; then
+            ok "rk809 = rockchip,system-power-controller（vendor 属性名，poweroff 真正断电）"
+        else
+            bad "DTB 缺 rockchip,system-power-controller —— poweroff 只会 halt，整板仍带电（风扇不停）"
+        fi
+        if grep -Eq '^[[:space:]]*system-power-controller;' "$DTC"; then
+            bad "DTB 仍有主线写法 system-power-controller;（vendor 6.1 不认）"
+        fi
         # PHY 说明：本板 PHY 是 Maxio MAE0621A，但 DT 里【不会】出现 "maxio" 字样 ——
         # 实测实机 DT 两处 PHY 均为 compatible = "ethernet-phy-ieee802.3-c22"（通用 C22），
         # Maxio 驱动是按运行时读到的 PHY ID 匹配的。所以这里该查两件事：

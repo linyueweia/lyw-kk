@@ -77,7 +77,6 @@ K1 的网口 PHY 是 **Maxio MAE0621A**，**不在上游内核里**，必须打�
 门禁验证，否则就是误导。现已在 `tools/verify-image.sh` 加**复位脚门禁**（解析 DTB 的
 `snps,reset-gpio` 并解析 phandle 到控制器，两个口都断言到实机定案值）。
 
-
 ### 网口 EEE：1G 在内核层关闭（`eee-broken-1000t`，2026-10-17 实机定案）
 
 2026-10-13 曾用五层用户态件关 EEE；2026-10-17 上午先按"官方默认保持开启"撤掉，结果**当天就把自己打掉线了**：
@@ -140,6 +139,15 @@ rkimg_bootdev=if mmc dev 1 && rkimgtest mmc 1; then ... Boot from SDcard;
 `/proc/mtd` 无设备、dmesg 无 spi-nor → **本板无 SPI 闪存**，
 故**不设** `BOOT_SUPPORT_SPI`（设了会让框架去生成 SPI loader，并因缺少
 `spl-blobs` 场景下不存在的 `tpl/u-boot-tpl.bin` 而构建失败 —— 已实际踩过）。
+
+## 关机断电（vendor 属性名，2026-10-22）
+
+`&rk809 { rockchip,system-power-controller; }` —— **必须带 `rockchip,` 前缀**。
+
+- vendor 6.1 的 `drivers/mfd/rk808.c` 只认这一个名字，`of_property_read_bool(np, "rockchip,system-power-controller")`；主线写法无前缀 `system-power-controller;` （immortalwrt 风格板级 DTS 常见）在 vendor 树里不命中。
+- 后果不是报错，而是**没有关机句柄**：`poweroff` 退化成 halt，PMIC 不停机 → 整板仍带电（风扇照转、网口灯亮、SoC 空转）。同一块 T68M 实测对照：iStoreOS（6.12 主线）关机风扇停，本镜像（6.1 vendor）关机风扇不停。
+- 验证：`dtc -I dtb -O dts /boot/dtb/rockchip/rk3568-kickpi-k1.dtb | grep -n "^\s*rockchip,system-power-controller;"`；判据是**锚行首**，裸 grep 会被长名里的短名命中。
+- 门禁：`tools/verify-image.sh` 在反解的产物 DTB 上断言 vendor 名存在、无前缀写法不存在（两条同时生效）。
 
 ## 构建
 
