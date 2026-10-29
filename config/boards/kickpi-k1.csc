@@ -14,6 +14,10 @@ BOARD_MAINTAINER="linyueweia"
 # 保持一致，改用 radxa-e25-rk3568_defconfig。
 BOOTCONFIG="radxa-e25-rk3568_defconfig"
 KERNEL_TARGET="vendor"
+# 根文件系统发行版，与 CI 的 RELEASE=trixie 钉死成同一份事实（技能 §1：三处同值）。
+# 框架没有板级/家族默认 RELEASE（rockchip64_common.inc 与 rk35xx.conf 都不设），不传就会
+# 停在交互选择菜单，本地产物与 CI 产物不是同一个发行版。
+declare -g RELEASE="trixie"
 FULL_DESKTOP="yes"
 BOOT_LOGO="desktop"
 BOOT_FDT_FILE="rockchip/rk3568-kickpi-k1.dtb"
@@ -25,6 +29,17 @@ BOOT_SCENARIO="spl-blobs"
 #   "mkimage: Can't open tpl/u-boot-tpl.bin" / "SPL image is too large (size 0xffffffff)"
 IMAGE_PARTITION_TABLE="gpt"
 BOOTFS_TYPE="fat"
+# 网络栈：对齐官方标准镜像（官方 EasePi R1 实测 dpkg 里根本没有 network-manager / netplan）。
+# 本仓此前【没写这一行】→ 框架按 rk35xx family 默认推导成 systemd-networkd
+# （CI #66 日志实录：`after sourcing family config [ NETWORKING_STACK='systemd-networkd' ]`
+#  → `Extension: net-systemd-networkd: Adding extra packages to image [ netplan.io ]`
+#  → AGGREGATED_PACKAGES_IMAGE 里出现 netplan.io/libnetplan1/netplan-generator/python3-netplan）
+# 与本板 ifupdown-ng(networking.service) + roceos(建 br-lan1/挂口/写 dnsmasq 配置) + dnsmasq
+# 抢管网口，且官方 minimal 根本没有这些包 —— CI #66 就是被「多余网络包 netplan.io」这条
+# 反向断言拦下的（白跑 100 分钟）。lyw-OS(T68M) 的 csc 一直有这一行，本仓漏了。
+# 显式置 none（框架 main-config 的正式取值，走 "Not adding networking extensions" 分支）。
+# 时间同步不受影响：ntpsec-ntpdate 就在 AGGREGATED_PACKAGES_IMAGE 里。
+declare -g NETWORKING_STACK="none"
 
 function post_family_tweaks__kickpi_k1_hold_dtb() {
 	display_alert "$BOARD" "Prevent armbian-upgrade from removing our dtb" "info"

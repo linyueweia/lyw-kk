@@ -199,7 +199,11 @@ jobs:
             || { echo "!! DTS 缺 gmac1 延迟 0x2f/0x39"; exit 1; }
           [ "$(grep -c 'eee-broken-1000t' "$DTS")" -ge 2 ] \
             || { echo "!! PHY 节点缺 eee-broken-1000t（EEE 1G 会把 Maxio PHY 的 RX 打死）"; exit 1; }
-          echo "    OK  DTS: rgmii + 延迟 + eee-broken-1000t"
+          # 反向：只关 1G 是本板定案，100M 的 EEE 保留官方默认，不得顺手关干净
+          if grep -qE 'eee-broken-(100baseT|100baseTx|10baseT|all)' "$DTS"; then
+            echo "!! DTS 出现 eee-broken-100baseT/all（本板定案只关 1G，100M EEE 必须保留）"; exit 1
+          fi
+          echo "    OK  DTS: rgmii + 延迟 + eee-broken-1000t（只关 1G，100M 保留）"
 
       - name: Fetch roceos web-UI payload into userpatches/overlay
         # 官方 iNextOS 镜像自带 roceos 网页后台（/opt/roceos + /opt/roceos-ai + 3 个

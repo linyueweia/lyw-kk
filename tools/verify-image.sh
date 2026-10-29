@@ -122,6 +122,12 @@ if [[ -f "$DT" ]]; then
     echo "    ── (2c) 网口 PHY 与实机 RGMII 延迟 ──"
     DTC=$(mktemp)
     if command -v dtc >/dev/null 2>&1 && dtc -I dtb -O dts -o "$DTC" "$DT" 2>/dev/null; then
+        # phy-mode 也必须断言【产物】：rgmii-id 会让 dwmac-rk 清零 MAC 侧延迟且无视 DT
+        # 的 tx/rx_delay → 采样点临界、帧越长越错（实测 56B 丢 65% / 1400B 丢 90%，
+        # 而接口错误计数为 0）。build.yml 里那条查的是仓库 DTS 源码，此处查打进内核树的 DTB。
+        grep -q 'phy-mode = "rgmii"' "$DTC" \
+            && ok 'phy-mode = "rgmii"（rgmii-id 会清零 MAC 延迟 → 大帧大量丢包）' \
+            || bad 'phy-mode 不是 rgmii（rgmii-id 会清零 MAC 延迟，1400B 丢 90%）'
         for pat in "tx_delay = <0x21>" "rx_delay = <0x3c>" "tx_delay = <0x2f>" "rx_delay = <0x39>"; do
             grep -q "$pat" "$DTC" && ok "实机值 $pat" || bad "缺实机值 $pat"
         done
@@ -130,24 +136,26 @@ if [[ -f "$DT" ]]; then
         # （实测 rx_lpi 1400 万次 / wake_err 数百）→ 灯亮能发不能收，整口失联。
         # 必须断言【编译产物】（dtc 反解出的 dts），不能只断言仓库 DTS 源码：
         # 源码有、打进内核树的 DTB 没有（补丁没应用/改错文件）时，源码断言照样绿。
+        # 语义与实机状态精确对齐（2026-10-29 定案）：EEE 总开关仍是 enabled（官方默认），
+        # 只是 1000baseT 这一档被剔出通告 —— 100M 的 EEE 必须保留，不能顺手也关掉。
         neee="$(grep -c 'eee-broken-1000t' "$DTC" 2>/dev/null || true)"
         [[ "${neee:-0}" -ge 2 ]] \
-            && ok "DTB 里 eee-broken-1000t 命中 $neee 处（两个 PHY 都只关 1G EEE）" \
-            || bad "DTB 里 eee-broken-1000t 只命中 ${neee:-0} 处（应为 2：1G EEE 会把 Maxio 的 RX 打死）"
+            && ok "DTB 里 eee-broken-1000t 命中 $neee 处（两个 PHY 只关 1G 档，100M EEE 保留）" \
+            || bad "DTB 里 eee-broken-1000t 只命中 ${neee:-0} 处（应为 ≥2：1G EEE 会把 Maxio 的 RX 打死）"
+        # 反向保护：只关 1G 是本板定案，100M/全关都属越界 —— 防止后人"顺手关干净"。
+        grep -qE 'eee-broken-(100baseT|100baseTx|10baseT|all)' "$DTC" 2>/dev/null \
+            && bad "DTB 出现 eee-broken-100baseT/all —— 本板定案只关 1G 档，100M 的 EEE 必须保留官方默认"
         # 关机断电（2026-10-22 实机对照定案）：vendor 6.1 的 rk808.c 只认
         #   of_property_read_bool(np, "rockchip,system-power-controller")
         # 主线写法 "system-power-controller;"（immortalwrt 风格板级 DTS）在 vendor 树里不被识别
         # → 关机句柄不注册 → poweroff 退化成 halt：整板不断电，风扇照转、网口灯亮。
         # 同一块 T68M 实测对照：iStoreOS(6.12 主线) 关机风扇停；本镜像(6.1 vendor) 关机风扇不停。
         # 断言必须锚行首 —— "system-power-controller" 是长名的子串，裸 grep 会假绿。
-        if grep -Eq '^[[:space:]]*rockchip,system-power-controller;' "$DTC"; then
-            ok "rk809 = rockchip,system-power-controller（vendor 属性名，poweroff 真正断电）"
-        else
-            bad "DTB 缺 rockchip,system-power-controller —— poweroff 只会 halt，整板仍带电（风扇不停）"
-        fi
-        if grep -Eq '^[[:space:]]*system-power-controller;' "$DTC"; then
-            bad "DTB 仍有主线写法 system-power-controller;（vendor 6.1 不认）"
-        fi
+        grep -Eq '^[[:space:]]*rockchip,system-power-controller;' "$DTC" \
+            && ok "rk809 = rockchip,system-power-controller（vendor 属性名，poweroff 真正断电）" \
+            || bad "DTB 缺 rockchip,system-power-controller —— poweroff 只会 halt，整板仍带电（风扇不停）"
+        grep -Eq '^[[:space:]]*system-power-controller;' "$DTC" \
+            && bad "DTB 仍有主线写法 system-power-controller;（vendor 6.1 不认）"
         # PHY 说明：本板 PHY 是 Maxio MAE0621A，但 DT 里【不会】出现 "maxio" 字样 ——
         # 实测实机 DT 两处 PHY 均为 compatible = "ethernet-phy-ieee802.3-c22"（通用 C22），
         # Maxio 驱动是按运行时读到的 PHY ID 匹配的。所以这里该查两件事：
@@ -184,18 +192,18 @@ if [[ -f "$DT" ]]; then
             # 模块化才有 DKMS + postinst 钩子 + 开机自愈这条链（见 extensions/kickpi-k1-module-selfheal.sh）。
             # 为什么连 MAC 侧也要 =m：phylib 在 MAC 探测时就绑 PHY，内建 MAC 会先抢绑通用驱动，
             # 晚到的 maxio 被跳过（lyw-kf PORTING 坑④ 实测）。
-            if grep -qE '^CONFIG_MAXIO_PHY=m' "$KCFG"; then
-                ok "内核配置 CONFIG_MAXIO_PHY=m（双千兆命门 + 可自愈）"
-            else
-                bad "内核配置不是 CONFIG_MAXIO_PHY=m —— 内建/未开都会让在线更新后无法恢复网口"
-            fi
+            grep -qE '^CONFIG_MAXIO_PHY=m' "$KCFG" \
+                && ok "内核配置 CONFIG_MAXIO_PHY=m（双千兆命门 + 可自愈）" \
+                || bad "内核配置不是 CONFIG_MAXIO_PHY=m —— 内建/未开都会让在线更新后无法恢复网口"
             for sym in STMMAC_ETH STMMAC_PLATFORM DWMAC_ROCKCHIP; do
                 grep -qE "^CONFIG_${sym}=m" "$KCFG" && ok "CONFIG_${sym}=m（PHY 绑定时序可控）" \
                     || bad "CONFIG_${sym} 不是 =m（内建 MAC 会抢绑 PHY，maxio 自愈失效）"
             done
             grep -E '^CONFIG_(MAXIO_PHY|STMMAC_ETH|STMMAC_PLATFORM|DWMAC_ROCKCHIP|PHYLIB|PCS_XPCS)=' "$KCFG" | sed 's/^/       /' || true
         else
-            echo "    · boot 分区未见 config-*（跳过内核配置检查）"
+            # 以前这里是 echo "· 跳过" —— 静默跳过核心检查 = 假绿（CI #66 审查时定案）。
+            # config-* 是 armbian 构建内核配置的产物，正常必在；不在 = 构建异常，必须红。
+            bad "boot 分区未见 config-* —— 内核配置检查被跳过（MAXIO_PHY/STMMAC 这些双千兆命门没验到）"
         fi
     else
         bad "dtc 不可用或无法反解 DTB"
@@ -204,10 +212,20 @@ if [[ -f "$DT" ]]; then
 fi
 
 echo "    ── (3) 引导配置指向本板 DTB ──"
+# 三个文件各自独立判会「全打 · = 假绿」：任一文件缺失/不提都只提示不判失败，
+# 三个都不指向本板 DTB 时镜像照样绿（CI #66 审查时定案）→ 加一个收口计数。
+fdt_hits=0
 for f in "$MNT/armbianEnv.txt" "$MNT/extlinux/extlinux.conf" "$MNT/fnEnv.txt"; do
     [[ -f "$f" ]] || continue
-    grep -q 'rk3568-kickpi-k1.dtb' "$f" && ok "$(basename "$f") 指向本板 DTB" || echo "    · $(basename "$f") 未提及本板 DTB"
+    if grep -q 'rk3568-kickpi-k1.dtb' "$f"; then
+        ok "$(basename "$f") 指向本板 DTB"; fdt_hits=$((fdt_hits+1))
+    else
+        echo "    · $(basename "$f") 未提及本板 DTB（另有收口断言兜底）"
+    fi
 done
+[[ $fdt_hits -ge 1 ]] \
+    && ok "至少一处引导配置指向本板 DTB（fdt_hits=$fdt_hits）" \
+    || bad "没有任何引导配置指向 rk3568-kickpi-k1.dtb —— 开机会加载错板的 DTB"
 if [[ -f "$MNT/boot.scr" ]]; then
     strings "$MNT/boot.scr" 2>/dev/null | grep -q 'kickpi-k1.dtb' && ok "boot.scr 含本板 DTB" || echo "    · boot.scr 未含本板 DTB 名（由 armbianEnv 提供亦可）"
 fi
@@ -284,11 +302,9 @@ else
             && ok "角色真源指向 roceos.db（不是 factory-env.json）" \
             || bad "角色脚本改错地方（factory-env.json 无效）"
         # 反面断言：不许出现"钉死内核"的痕迹（本板设计是更新后自愈，不是禁止更新）
-        if grep -rqs 'linux-image-vendor-rk35xx' "$RMNT/etc/apt/preferences.d/" 2>/dev/null; then
-            bad "镜像里出现内核 apt pin（与设计相悖：内核不钉死）"
-        else
-            ok "无内核 pin（在线更新不受阻）"
-        fi
+        grep -rqs 'linux-image-vendor-rk35xx' "$RMNT/etc/apt/preferences.d/" 2>/dev/null \
+            && bad "镜像里出现内核 apt pin（与设计相悖：内核不钉死）" \
+            || ok "无内核 pin（在线更新不受阻）"
 
         # smartmontools 必须「包在、不启用」= 官方 R1 口径（2026-10-29 实机取证）。
         # 官方 R1 发布件里该包存在，但 multi-user.target.wants 里没有启用链接；
@@ -301,11 +317,9 @@ else
             && bad "smartmontools 被启用（官方 R1 不启用，开机必 failed：eMMC 无 SMART，exit 17）" \
             || ok "smartmontools 未启用（与官方 R1 一致：包在、不启用）"
         # 反向中的反向：包本身必须还在。官方 R1 同样发行这个包 —— 卸载它是自造差异，不是对齐官方。
-        if grep -q '^Package: smartmontools$' "$RMNT/var/lib/dpkg/status" 2>/dev/null; then
-            ok "smartmontools 包在位（与官方 R1 一致，未被误卸载）"
-        else
-            bad "smartmontools 包缺失（官方 R1 发行该包，应只 disable 不要卸载）"
-        fi
+        grep -q '^Package: smartmontools$' "$RMNT/var/lib/dpkg/status" 2>/dev/null \
+            && ok "smartmontools 包在位（与官方 R1 一致，未被误卸载）" \
+            || bad "smartmontools 包缺失（官方 R1 发行该包，应只 disable 不要卸载）"
         # ── 包集合与官方 minimal 同口径（2026-10-29 与 lyw-OS 对齐）──
         # 官方 R1 发布件实测 718 包；BUILD_MINIMAL=no 会装进 framework 的
         # config/cli/<rel>/main/packages.additional 整份（T68M 线实测 958 包），
