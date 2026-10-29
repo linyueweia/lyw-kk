@@ -140,6 +140,44 @@ jobs:
           [ "$n_after" -eq 1 ] || { echo "!! DDR 替换未生效（1056_v1.23 命中 $n_after 次）"; exit 1; }
           echo "--- DDR 固件: 框架默认 1560_v1.21 → 已替换为 1056_v1.23（=K1 真机 eMMC 原厂 03ea844c5d 同款）"
 
+      - name: Board static gate (csc / extensions / 网络栈)
+        # 构建前秒级静态门 —— CI #66 的教训：csc 少了 NETWORKING_STACK="none"，
+        # 框架按 rk35xx family 默认推导成 systemd-networkd → 装 netplan.io，
+        # 这类「配置缺失」原本要等 verify-image.sh 在 100 分钟后才红。全部提前到现在判死。
+        run: |
+          set -e
+          echo "--- 板级静态门（csc / 扩展 / 网络栈）---"
+          CSC=k1/config/boards/kickpi-k1.csc
+          # ① 网络栈：CI #66 白跑 100 分钟的根因，缺了必装 netplan.io
+          grep -q 'declare -g NETWORKING_STACK="none"' "$CSC" \
+            || { echo "!! csc 缺 NETWORKING_STACK=none —— 会装 netplan.io，被包黑名单断言拦下（CI #66 教训）"; exit 1; }
+          echo "    ✅ NETWORKING_STACK=none"
+          # ② RELEASE 三处同值（技能 §1：csc 钉死，否则本地构建停在交互菜单）
+          grep -q 'declare -g RELEASE="trixie"' "$CSC" \
+            || { echo "!! csc 缺 declare -g RELEASE=trixie（本地构建会停在交互选择）"; exit 1; }
+          echo "    ✅ RELEASE=trixie 已钉死"
+          # ③ 三个 post_family_tweaks 钩子必须在位（board 名里连字符→下划线）
+          for h in hold_dtb network_interfaces disable_smartmontools; do
+            grep -q "function post_family_tweaks__kickpi_k1_$h" "$CSC" \
+              || { echo "!! csc 缺钩子 post_family_tweaks__kickpi_k1_$h"; exit 1; }
+          done
+          echo "    ✅ 三钩子在位（hold_dtb / network_interfaces / disable_smartmontools）"
+          # ④ ENABLE_EXTENSIONS 白名单必须覆盖全部自建扩展（漏一个 = 扩展永不加载且不报错）
+          #    注意：本 step 自己的 grep 模式也含 ENABLE_EXTENSIONS="…"，直接 grep 会先匹配到
+          #    自己（head -1 取到 [^"]+ → 白名单全挂，CI #67 本地模拟抓到）。只认含逗号的真实列表。
+          EXTS=$(grep -oE 'ENABLE_EXTENSIONS="[^",]+(,[^"]+)+"' k1/.github/workflows/build.yml | head -1 | sed 's/ENABLE_EXTENSIONS="//;s/"//')
+          for f in k1/extensions/*.sh; do
+            b=$(basename "$f" .sh)
+            echo "$EXTS" | tr ',' '\n' | grep -qx "$b" \
+              || { echo "!! 扩展 $b 不在 ENABLE_EXTENSIONS 白名单里（框架永远不会加载它）"; exit 1; }
+          done
+          echo "    ✅ 扩展白名单覆盖全部 $(ls k1/extensions/*.sh | wc -l) 个"
+          # ⑤ 判据自身可跑（负例不响 = 判据没在干活）
+          python3 k1/tools/dts-lint.py --selftest >/dev/null
+          python3 k1/tools/verify-assert-lint.py k1/tools/verify-image.sh >/dev/null
+          python3 k1/tools/patch-hunk-lint.py k1/patch/ >/dev/null
+          echo "    ✅ 三个判据自检全过（dts-lint / verify-assert-lint / patch-hunk-lint）"
+
       - name: Board DTS syntax gate
         # 板级 DTS 语法门（1 秒）—— 与 lyw-OS 构建流程对齐（2026-10-29）。
         # 它挡的是"纯文本可判定、却要等内核 make 才报"的错：T68M 线两次真实事故，
