@@ -11,6 +11,11 @@ on:
     # 每日 03:00（CST / UTC+8）检查上游框架是否更新，有更新则自动编译
     - cron: '0 19 * * *'
 
+# 同仓同分支只允许一发在跑：新 push 取消旧 run，避免同一棵树并行烧两遍 100 分钟
+concurrency:
+  group: kk-image-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ── 上游跟踪：比对 jjm2473/armbian-easepi 的 easepi-v26.02 分支 HEAD ──
   upstream:
@@ -344,8 +349,10 @@ jobs:
           LOOP=$(sudo losetup --show -f -P "$IMG")
           echo "LOOP=$LOOP"
           sudo mkdir -p /mnt/ib /mnt/ir
-          sudo mount "${LOOP}p1" /mnt/ib || true
-          sudo mount "${LOOP}p2" /mnt/ir || true
+          # 只读挂载：镜像在 build 步骤里已经压成 .img.xz，此步只做读取断言。
+          # 用 rw 挂载会让 ext4 在 umount 时回写超级块 → 输出的 .img 与已上传的 .xz 不再同内容。
+          sudo mount -o ro "${LOOP}p1" /mnt/ib || true
+          sudo mount -o ro "${LOOP}p2" /mnt/ir || true
           echo "--- p1 内容:";  ls /mnt/ib | head -20
           echo "--- p2 内容:";  ls /mnt/ir | head -20
           FAIL=0
