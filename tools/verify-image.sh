@@ -289,6 +289,23 @@ else
         else
             ok "无内核 pin（在线更新不受阻）"
         fi
+
+        # smartmontools 必须「包在、不启用」= 官方 R1 口径（2026-10-29 实机取证）。
+        # 官方 R1 发布件里该包存在，但 multi-user.target.wants 里没有启用链接；
+        # 我们的镜像曾因 Debian trixie 的 preset 在构建期自动生成链接，开机必 failed
+        #（eMMC 不支持 SMART，smartd 退出码 17），判据＝enable 链 mtime 早于开机时刻。
+        # 构建期由 csc 的 post_family_tweaks__kickpi_k1_disable_smartmontools 删链，
+        # 此处反向断言把关：链接不得出现（防 preset 复活 / 后续步骤重新 enable）。
+        [[ -e "$RMNT/etc/systemd/system/multi-user.target.wants/smartmontools.service" ]] ||
+        [[ -L "$RMNT/etc/systemd/system/multi-user.target.wants/smartmontools.service" ]] \
+            && bad "smartmontools 被启用（官方 R1 不启用，开机必 failed：eMMC 无 SMART，exit 17）" \
+            || ok "smartmontools 未启用（与官方 R1 一致：包在、不启用）"
+        # 反向中的反向：包本身必须还在。官方 R1 同样发行这个包 —— 卸载它是自造差异，不是对齐官方。
+        if grep -q '^Package: smartmontools$' "$RMNT/var/lib/dpkg/status" 2>/dev/null; then
+            ok "smartmontools 包在位（与官方 R1 一致，未被误卸载）"
+        else
+            bad "smartmontools 包缺失（官方 R1 发行该包，应只 disable 不要卸载）"
+        fi
         umount "$RMNT" 2>/dev/null || true
     else
         bad "rootfs 分区挂载失败"

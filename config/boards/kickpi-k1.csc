@@ -109,3 +109,33 @@ function post_family_tweaks__kickpi_k1_network_interfaces() {
 	display_alert "$BOARD" "K1 network pinned: eth0=fe010000(LAN 192.168.100.1), eth1=fe2a0000; NM ordered after LAN init" "info"
 	return 0
 }
+
+# ── 对齐官方 R1：smartmontools「包在、但不启用」（2026-10-29 实机取证定案）──
+# 官方 R1 发布件实测：/usr/lib/systemd/system/smartmontools.service **存在**，
+# 但 multi-user.target.wants 里**没有**它的启用链接（官方 wants 共 30 个）。
+# 我们的镜像因为在构建期 deb 解包时被 Debian trixie 的 preset（smartmontools:
+# preset enabled）自动生成了链接，结果每次开机必 failed —— eMMC 不支持 SMART，
+# smartd 退出码 17「No devices to monitor」，systemctl --failed 长期挂一个红。
+# 实机取证（判据＝enable 链 mtime 比对开机时刻）：
+#   enable 链 mtime = 构建期  <  开机时刻
+#   ⇒ 构建产物偏差；而 roceos 首启自装/在线更新带来的服务（openvpn/strongswan/roceos-guard
+#     等）链 mtime 都在开机之后，属运行期合法，本钩子不去动它们。
+# 修法＝**只删启用链接、保留包**（官方 R1 也发行这个包），不是卸载。
+# 为什么直接 rm 而不是 systemctl disable：框架已知坑 —— chroot_sdcard 里跑
+# systemctl 在构建容器里未必改得动镜像内的链接（enable 侧同坑，见技能 §5），
+# 所以直接删文件并在函数内自证；镜像侧再由 tools/verify-image.sh 的反向断言把关。
+function post_family_tweaks__kickpi_k1_disable_smartmontools() {
+	display_alert "$BOARD" "Align smartmontools with official R1 (package present, NOT enabled)" "info"
+	rm -f "${SDCARD}/etc/systemd/system/multi-user.target.wants/smartmontools.service"
+	rm -f "${SDCARD}/etc/systemd/system/smartd.service"
+	# 自证 1：链接必须已消失（删不掉就构建失败，别让偏差溜进镜像）
+	if [ -e "${SDCARD}/etc/systemd/system/multi-user.target.wants/smartmontools.service" ] ||
+	   [ -L "${SDCARD}/etc/systemd/system/multi-user.target.wants/smartmontools.service" ]; then
+		exit_with_error "smartmontools enable link still present in image (official R1: package ships, NOT enabled)"
+	fi
+	# 自证 2：包本身必须还在 —— 官方 R1 同样发行它，卸载是自造差异而非对齐官方
+	if ! grep -q "^Package: smartmontools$" "${SDCARD}/var/lib/dpkg/status" 2>/dev/null; then
+		exit_with_error "smartmontools package missing; official R1 ships it — disable only, do NOT uninstall"
+	fi
+	return 0
+}
