@@ -301,6 +301,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # ⚠️ 顺序铁律：Upload 必须在**任何自证之前**。自证脚本误报红的历史有好几次，
+      # 产物此时已上传完毕，不会白跑 100 分钟；旧顺序把 Upload 放最后，自证一红产物全丢。
+      - name: Upload iNextOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: inextos-kickpi-k1
+          # 只打包压缩版（参照 lyw-OS）：raw .img 与 .img.xz 内容等价，
+          # raw 里全是零字节区，zip 再压一遍纯属浪费带宽/存储/下载时间。
+          path: |
+            build/output/images/*.img.xz
+            build/output/images/*.sha
+          retention-days: 14
+          if-no-files-found: error
+
       - name: Post-process verification (bootloader / DTB IP blocks / DDR fingerprint)
         run: |
           set -e
@@ -398,13 +412,20 @@ jobs:
             else
               echo "  !!  DRM/HDMI 链路配置缺失（显示/CEC/EDID 会静默失效）"; FAIL=1
             fi
-            # 实机 /proc/modules 无 ahci*（SATA 主机内建）→ 必须 =y：=m 时 rootfs 没有该 .ko，
-            # SATA 不 probe、root-on-SATA/热插拔全无（旧门禁 `CONFIG_AHCI_DWC=` 连 =m 都放行）。
-            if grep -qE '^CONFIG_SATA_AHCI_PLATFORM=y|^CONFIG_AHCI_DWC=y' "$CFG"; then
-              echo "  OK  SATA AHCI 配置在位（=y 内建）"
-            else
-              echo "  !!  SATA AHCI 配置缺失或为 =m（实机有 ata1 控制器）"; FAIL=1
-            fi
+            # 实机 /proc/modules 无 ahci*（SATA 主机内建）→ **两个符号都必须 =y，缺一即 red**：
+            #  · SATA_AHCI_PLATFORM=y 只是平台层；
+            #  · 6.1 里 RK 的 SATA 绑定靠 drivers/ata/ahci_dwc.c（of_match "snps,dwc-ahci"），
+            #    它为 =m 时 rootfs 不装该 .ko 就没有 SATA（root-on-SATA / 热插拔全无）。
+            # 旧写法 `grep -qE 'A=y|B=y'` 是 OR —— 单独 platform=y 就能绿，=m 正是从这个口子溜过去。
+            # 每行都打印配置原文，红了能直接从日志看出实际值。
+            for sym in SATA_AHCI_PLATFORM AHCI_DWC; do
+              val=$(grep -E "^CONFIG_${sym}=" "$CFG" 2>/dev/null | head -1 || true)
+              if [ "$val" = "CONFIG_${sym}=y" ]; then
+                echo "  OK  $val"
+              else
+                echo "  !!  ${val:-CONFIG_${sym}=(缺失)} —— 必须 =y；=m 时实机 SATA 不 probe"; FAIL=1
+              fi
+            done
             # 实机 /proc/config.gz: PCI_MSI=y；6.1 里 arm64 不 select、Kconfig 无 default →
             # 不显式开就退化到 INTx（NVMe 队列/中断亲和失效，吞吐与 CPU 占用劣化）。
             if grep -qE '^CONFIG_PCI_MSI=y' "$CFG"; then
@@ -435,15 +456,3 @@ jobs:
         run: |
           ls -lh build/output/images/ || true
           cat build/output/images/*.sha 2>/dev/null || true
-
-      - name: Upload iNextOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: inextos-kickpi-k1
-          # 只打包压缩版（参照 lyw-OS）：raw .img 与 .img.xz 内容等价，
-          # raw 里全是零字节区，zip 再压一遍纯属浪费带宽/存储/下载时间。
-          path: |
-            build/output/images/*.img.xz
-            build/output/images/*.sha
-          retention-days: 14
-          if-no-files-found: error
