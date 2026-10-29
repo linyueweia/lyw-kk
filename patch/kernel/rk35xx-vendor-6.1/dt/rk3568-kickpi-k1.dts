@@ -652,8 +652,14 @@
 	status = "okay";
 };
 
-&sata2 {
-	/* 数据口，不参与启动（README） */
+&sata0 {
+	/* 数据口，不参与启动（README）。
+	   2026-10-29 以 KF(飞牛线) 为金标准修正：K1 板物理 SATA 口接在
+	   sata0(fc000000)——K1 飞牛实机(192.168.10.20)取证 `/sys/block/sda/device`
+	   的上游是 `fc000000.sata/ata1`，挂着 Samsung 860 Plus；而原写法
+	   &sata2(=fc800000) 在飞牛线 DTB 里是 disabled，那颗控制器上没有任何
+	   物理口，启用它等于数据口不工作。sata1(fc400000)/sata2(fc800000)
+	   保持内核默认 disabled，不额外覆盖。 */
 	status = "okay";
 };
 

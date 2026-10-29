@@ -306,6 +306,27 @@ else
         else
             bad "smartmontools 包缺失（官方 R1 发行该包，应只 disable 不要卸载）"
         fi
+        # ── 包集合与官方 minimal 同口径（2026-10-29 与 lyw-OS 对齐）──
+        # 官方 R1 发布件实测 718 包；BUILD_MINIMAL=no 会装进 framework 的
+        # config/cli/<rel>/main/packages.additional 整份（T68M 线实测 958 包），
+        # 其中 avahi-autoipd 在 DHCP 失败时把网卡配成 169.254 链路本地地址、
+        # unattended-upgrades 在后台升级并重启 dnsmasq/网络服务 —— 都会表现成
+        # "网口灯亮、下级设备拿不到 IP / 用几小时就掉"，且官方 minimal 完全没有。
+        for p in avahi-autoipd unattended-upgrades vnstat iperf3 plymouth dkms rng-tools-debian build-essential; do
+            grep -q "^Package: ${p}$" "$RMNT/var/lib/dpkg/status" 2>/dev/null \
+                && bad "出现 packages.additional 成员 ${p}（官方 minimal 不含，BUILD_MINIMAL 应为 yes）"
+        done
+        ok "packages.additional 全员缺席（与官方 minimal 同口径）"
+        # 网络栈对齐官方标准：官方 EasePi R1 实测 dpkg 里根本没有 network-manager
+        #（框架默认 BUILD_MINIMAL=no 会走 NETWORKING_STACK=network-manager，
+        #  与本板 ifupdown-ng + roceos(建 br-lan1) + dnsmasq 抢管网口）。
+        for p in network-manager network-manager-openvpn netplan.io chrony; do
+            grep -q "^Package: ${p}$" "$RMNT/var/lib/dpkg/status" 2>/dev/null \
+                && bad "多余网络包 ${p}（官方标准镜像不含）"
+        done
+        [ ! -e "$RMNT/usr/sbin/NetworkManager" ] \
+            && ok "网络栈与官方一致（无 NetworkManager 二进制）" \
+            || bad "NetworkManager 二进制仍在（未对齐官方标准）"
         umount "$RMNT" 2>/dev/null || true
     else
         bad "rootfs 分区挂载失败"
