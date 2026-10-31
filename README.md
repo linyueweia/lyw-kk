@@ -157,7 +157,7 @@ rkimg_bootdev=if mmc dev 1 && rkimgtest mmc 1; then ... Boot from SDcard;
 - 版本记录在 `official-roceos.txt`；由 `.github/workflows/build.yml` 的 `roceos` job 每天 03:00 CST
   核对并**自动跟版**（重建载荷 → 发本仓 release → 改三处 pin → 推送；同一次 run 的 build 直接接着编）。
   自查：`python3 tools/check-roceos.py --pinned official-roceos.txt`。
-- 载荷 = `roceos-payload-v2`（lyw-OS release），sha256 `cbd911c6…39dd48`；
+- 载荷 = `roceos-payload-v2`（**本仓 release**，跟版时自动重发），sha256 `cbd911c6…39dd48`；
   取件/打包/判据见 lyw-rr 与 lyw-hh 的 docs「roceos 载荷怎么跟官方版本」（四仓同一套）。
 
 ## 构建
