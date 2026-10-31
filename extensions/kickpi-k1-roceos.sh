@@ -15,8 +15,8 @@
 # （本板 SDIO WiFi = Seekwave SWT6621S：其驱动/固件/DT 支持已于 2026-10-14 从本仓移除，原因见 README。）
 # ══════════════════════════════════════════════════════════════════════════
 
-# 载荷 sha256（与 release roceos-payload-v1 一致；内容一变就报错）
-ROCEOS_PAYLOAD_SHA256="6b819584a1b1701163f8983bd59a31821643f64dd65c76ba8f500ef54c5e8bb5"
+# 载荷 sha256（与 release roceos-payload-v2 一致；内容一变就报错）
+ROCEOS_PAYLOAD_SHA256="cbd911c6fad5a3655bc52a39e4099b8812c70d8358840e1d1d8bf6db956703d1"
 
 function post_post_debootstrap_tweaks__kickpi_k1_roceos() {
 	display_alert "Installing roceos web UI (KICKPI K1)" "$EXTENSION" "info"

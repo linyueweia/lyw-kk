@@ -65,7 +65,8 @@ jobs:
     name: Build iNextOS image (KICKPI K1 / RK3568)
     needs: upstream
     # 手动触发 / push 时总是构建；定时任务只在上游有更新时构建
-    if: github.event_name != 'schedule' || needs.upstream.outputs.changed == 'true'
+    # always()：上游指纹检查自身失败（403 / 网络抖动）不应该把 push / dispatch 触发的构建一起吞掉。
+    if: always() && (github.event_name != 'schedule' || needs.upstream.outputs.changed == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     steps:
@@ -198,6 +199,12 @@ jobs:
           python3 k1/tools/dts-lint.py k1/patch/kernel/rk35xx-vendor-6.1/dt/*.dts
           echo "    ✅ 板级 DTS 语法形态通过"
 
+      # ── 包集合判据自身的正/负例自测（秒级；与 lyw-rr / lyw-hh 同一份代码）──
+      - name: Self-test packages parity gate
+        run: |
+          set -e
+          python3 k1/tools/packages-parity-check.py --selftest
+
       - name: Install KICKPI K1 extensions
         # 扩展放在 userpatches/extensions/ —— 框架会自动搜索该目录并加载。
         # 关键：框架只加载【可执行】的扩展脚本，权限不对会被静默跳过
@@ -255,10 +262,10 @@ jobs:
         run: |
           set -e
           mkdir -p build/userpatches/overlay
-          URL="https://github.com/linyueweia/lyw-OS/releases/download/roceos-payload-v1/roceos-payload.tar.gz"
+          URL="https://github.com/linyueweia/lyw-OS/releases/download/roceos-payload-v2/roceos-payload.tar.gz"
           curl -fsSL -o build/userpatches/overlay/roceos-payload.tar.gz "$URL"
           # 指纹固定断言：内容一变立即失败
-          echo "6b819584a1b1701163f8983bd59a31821643f64dd65c76ba8f500ef54c5e8bb5  build/userpatches/overlay/roceos-payload.tar.gz" | sha256sum -c -
+          echo "cbd911c6fad5a3655bc52a39e4099b8812c70d8358840e1d1d8bf6db956703d1  build/userpatches/overlay/roceos-payload.tar.gz" | sha256sum -c -
           ls -l build/userpatches/overlay/
           echo "--- 扩展清单（应含 kickpi-k1-roceos.sh）:"
           ls -l build/userpatches/extensions/ 2>/dev/null || true
@@ -339,6 +346,12 @@ jobs:
           # 必须 root：脚本要 losetup + mount 镜像分区（缺 sudo 会报
           #   mkdir: cannot create directory '/mnt/ib_v': Permission denied
           #   losetup: ... failed to set up loop device）
+          # 包集合判据（tools/packages-parity-check.py）要复现框架的聚合口径：
+          # config/cli/<rel>/main + optional/_any_board + optional/architectures/<arch>，
+          # 以及扩展 add_packages_to_image 带入的包 ⇒ 构建树与扩展源码一起传进去。
+          export BUILD_TREE="$GITHUB_WORKSPACE/build"
+          PACKAGES_EXTENSION_FILES="$(printf '%s ' $GITHUB_WORKSPACE/build/extensions/istorenext.sh $GITHUB_WORKSPACE/build/userpatches/extensions/*.sh)"
+          export PACKAGES_EXTENSION_FILES
           sudo -E bash k1/tools/verify-image.sh "$IMG"
 
       - name: Verify image (Maxio PHY driver / dual GbE / DTB)

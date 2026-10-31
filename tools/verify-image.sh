@@ -326,11 +326,23 @@ else
         # 其中 avahi-autoipd 在 DHCP 失败时把网卡配成 169.254 链路本地地址、
         # unattended-upgrades 在后台升级并重启 dnsmasq/网络服务 —— 都会表现成
         # "网口灯亮、下级设备拿不到 IP / 用几小时就掉"，且官方 minimal 完全没有。
-        for p in avahi-autoipd unattended-upgrades vnstat iperf3 plymouth dkms rng-tools-debian build-essential; do
-            grep -q "^Package: ${p}$" "$RMNT/var/lib/dpkg/status" 2>/dev/null \
-                && bad "出现 packages.additional 成员 ${p}（官方 minimal 不含，BUILD_MINIMAL 应为 yes）"
-        done
-        ok "packages.additional 全员缺席（与官方 minimal 同口径）"
+        # 判据单点 = tools/packages-parity-check.py（来源减法）。
+        # packages.additional 的成员有四个【官方 minimal 镜像里同样存在】的合法来源：
+        #   ① 框架自己的 rootfs 清单（三层聚合；gpiod 只在 optional/architectures/arm64 层）
+        #   ② istorenext 的 add_packages_to_image（git/unzip/ntfs-3g/nfs-common/smartmontools…）
+        #   ③ 上面两者的 Depends/Recommends 传递   ④ apt 的 Auto-Installed
+        # 2026-10-31 官方 A2 2.9.1 镜像（716 包）实测：那 15 个成员官方全都有 ⇒「出现即红」是假判据。
+        if [ -n "${BUILD_TREE:-}" ] && [ -d "${BUILD_TREE}/config/cli" ]; then
+            _pp=(--root "$RMNT" --build-tree "$BUILD_TREE" --release "${RELEASE:-trixie}" --arch arm64)
+            for _f in ${PACKAGES_EXTENSION_FILES:-}; do [ -f "$_f" ] && _pp+=(--extension "$_f"); done
+            python3 "$(dirname "$0")/packages-parity-check.py" "${_pp[@]}" || bad "包集合与官方 minimal 口径不一致（上述包没有任何合法来源）"
+        else
+            echo "  --  （未传 BUILD_TREE：退化为 8 个关键包黑名单，覆盖面不足）"
+            for p in avahi-autoipd unattended-upgrades vnstat iperf3 plymouth dkms rng-tools-debian build-essential; do
+                grep -q "^Package: ${p}$" "$RMNT/var/lib/dpkg/status" 2>/dev/null \
+                    && bad "出现 packages.additional 成员 ${p}（官方 minimal 不含，BUILD_MINIMAL 应为 yes）"
+            done
+        fi
         # 网络栈对齐官方标准：官方 EasePi R1 实测 dpkg 里根本没有 network-manager
         #（框架默认 BUILD_MINIMAL=no 会走 NETWORKING_STACK=network-manager，
         #  与本板 ifupdown-ng + roceos(建 br-lan1) + dnsmasq 抢管网口）。

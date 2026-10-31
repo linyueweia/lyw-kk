@@ -149,6 +149,16 @@ rkimg_bootdev=if mmc dev 1 && rkimgtest mmc 1; then ... Boot from SDcard;
 - 验证：`dtc -I dtb -O dts /boot/dtb/rockchip/rk3568-kickpi-k1.dtb | grep -n "^\s*rockchip,system-power-controller;"`；判据是**锚行首**，裸 grep 会被长名里的短名命中。
 - 门禁：`tools/verify-image.sh` 在反解的产物 DTB 上断言 vendor 名存在、无前缀写法不存在（两条同时生效）。
 
+## roceos 版本口径（2026-10-31，四仓统一）
+
+- 镜像内置 roceos = 官方在线通道最新版 **3.0.2**（`channel=stable_arm`、`arch=arm64`）。
+- 官方更新地址（从 roceos 二进制里取的常量，非文档抄录）：
+  `http://update.roceos.com:14380/api/v1/updates/check?version=<当前>&channel=stable_arm&arch=arm64`
+- 版本记录在 `official-roceos.txt`；`.github/workflows/check-roceos.yml` 每天 03:30 CST 比对，
+  官方发新版就红（= 该重建载荷，不是构建坏了）。自查：`python3 tools/check-roceos.py --pinned official-roceos.txt`。
+- 载荷 = `roceos-payload-v2`（lyw-OS release），sha256 `cbd911c6…39dd48`；
+  取件/打包/判据见 lyw-rr 与 lyw-hh 的 docs「roceos 载荷怎么跟官方版本」（四仓同一套）。
+
 ## 构建
 
 推送到 `main` 即触发；或在 Actions 页面手动 `workflow_dispatch`。
