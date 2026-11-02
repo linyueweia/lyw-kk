@@ -151,13 +151,15 @@ rkimg_bootdev=if mmc dev 1 && rkimgtest mmc 1; then ... Boot from SDcard;
 
 ## roceos 版本口径（2026-10-31，四仓统一）
 
-- 镜像内置 roceos = 官方在线通道最新版 **3.0.2**（`channel=stable_arm`、`arch=arm64`）。
+- 镜像内置 roceos = 官方在线通道最新版（`channel=stable_arm`、`arch=arm64`）。
+  **具体版本号不在文档里抄** —— 以 `official-roceos.txt` 的 `version` 为准（跟版 job 自动维护）。
 - 官方更新地址（从 roceos 二进制里取的常量，非文档抄录）：
   `http://update.roceos.com:14380/api/v1/updates/check?version=<当前>&channel=stable_arm&arch=arm64`
 - 版本记录在 `official-roceos.txt`；由 `.github/workflows/build.yml` 的 `roceos` job 每天 03:00 CST
-  核对并**自动跟版**（重建载荷 → 发本仓 release → 改三处 pin → 推送；同一次 run 的 build 直接接着编）。
+  核对并**自动跟版**（重建载荷 → 发本仓 release → 改两处 pin（`official-roceos.txt` + 扩展常量） → 推送；同一次 run 的 build 直接接着编）。
   自查：`python3 tools/check-roceos.py --pinned official-roceos.txt`。
-- 载荷 = `roceos-payload-v2`（**本仓 release**，跟版时自动重发），sha256 `cbd911c6…39dd48`；
+- 载荷 = 本仓 release `roceos-payload-<版本>`（跟版时自动重发），URL 与 sha256 **只在
+  `official-roceos.txt`**（`payload_url` / `payload_sha256`），`build.yml` 运行时从这里读；
   取件/打包/判据见 lyw-rr 与 lyw-hh 的 docs「roceos 载荷怎么跟官方版本」（四仓同一套）。
 
 ## 构建
