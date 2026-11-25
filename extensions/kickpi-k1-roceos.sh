@@ -16,7 +16,7 @@
 # ══════════════════════════════════════════════════════════════════════════
 
 # 载荷 sha256（与 release roceos-payload-v2 一致；内容一变就报错）
-ROCEOS_PAYLOAD_SHA256="229f22f730d6ed83fd11d2da861771a2d589c7579b896eea1c7985aabb3a3aa4"
+ROCEOS_PAYLOAD_SHA256="551379b92c5cb8ca088d355bf4e5abaf242ff895fb2a80f01c9adda66430efac"
 
 function post_post_debootstrap_tweaks__kickpi_k1_roceos() {
 	display_alert "Installing roceos web UI (KICKPI K1)" "$EXTENSION" "info"
